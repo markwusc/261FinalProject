@@ -1,4 +1,4 @@
-clc; clear;
+    clc; clear;
 W = 40000;
 rho = 1.225;
 S = 22.3;
