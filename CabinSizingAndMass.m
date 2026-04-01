@@ -33,6 +33,7 @@ totalSeatWeight = seatWeight * rows * seatsPerRow;
 passengerWeightlb = 200 + 50; %lb, must convert to kg, includes checked baggage
 passengerWeight = passengerWeightlb * 0.453592;
 
+totalSeatWeigt = totalSeatWeight + passengerWeight;
 
 
 
