@@ -30,7 +30,7 @@ fprintf('cabinLength = %.3f m\n', cabinLength);
 seatWeight = 10; %kg
 totalSeatWeight = seatWeight * rows * seatsPerRow;
 
-passengerWeightlb = 9 * (200 + 50); %lb, must convert to kg, includes checked baggage
+passengerWeightlb = 9 * (200 + 50) + 400; %lb, must convert to kg, includes checked baggage
 passengerWeight = passengerWeightlb * 0.453592;
 
 totalSeatWeigt = totalSeatWeight + passengerWeight;
@@ -38,4 +38,4 @@ totalSeatWeigt = totalSeatWeight + passengerWeight;
 
 
 
-fprintf('Total seat weight = %.2f kg\n', totalSeatWeight + passengerWeight);
+fprintf('Total passenger payload = %.2f kg\n', totalSeatWeight + passengerWeight);
