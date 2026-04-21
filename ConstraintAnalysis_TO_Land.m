@@ -56,7 +56,7 @@ clear; clc; close all;
 % =========================================================================
 
 % ── Weight ───────────────────────────────────────────────────────────────
-W_To    = 60000;    % Max takeoff weight                          [N]
+W_To    = 32000;    % Max takeoff weight                          [N]
                     % ESTIMATE ~4077 kg — update when weight loop converges
 zeta = 0.125; % fuel fraction, changes with mission
 fuel_pct_remaining = 0.05; % reserve fuel percentage
@@ -69,9 +69,9 @@ W_land = W_To - W_fuel_burned;               % Aircraft landing weight [N]
 % ── Propulsion ───────────────────────────────────────────────────────────
 
 shp2W = 745.7; % conversion factor from hp to W
-P = 1200; % [hp] Engine rated shp, input one engine, will multiply later by itself.
-eta = 0.85;
-P_A = eta*P*2*shp2W;
+P = 1050; % [hp] Engine rated shp, input one engine.
+eta = 0.8;
+P_A = eta*P*shp2W;
 
 V_thrustcalc = 30; % [m/s] velocity which calculates thrust
 T_A     = P_A/V_thrustcalc;   % Maximum available thrust at S/L ISA          [N]
@@ -80,12 +80,12 @@ T_A     = P_A/V_thrustcalc;   % Maximum available thrust at S/L ISA          [N]
 % Reverse thrust via propeller beta-pitch (PT6A turboprop class).
 % Published effectiveness: 40–55% of max forward thrust.
 % Using 0.45 as a conservative mid-range value.
-eta_rev = 0.475;    % Thrust reversal effectiveness factor         [-]
+eta_rev = 0.40;    % Thrust reversal effectiveness factor         [-]
 T_rev   = eta_rev * T_A;   % Effective reverse thrust             [N]
                             % = 22500 N  (~5058 lbf)
 
 % ── Aerodynamics ─────────────────────────────────────────────────────────
-CL_max  = 3.2;     % Max lift coefficient with full-flap config   [-]
+CL_max  = 2.6;     % Max lift coefficient with full-flap config   [-]
                     % Per RFP §4.3: aircraft CLmax = 0.8 * airfoil CLmax
                     % Assumes high-lift STOL airfoil (e.g. NACA 4415 + flaps)
                     % NOTE: same CL_max used for both TO and landing; in
@@ -93,13 +93,13 @@ CL_max  = 3.2;     % Max lift coefficient with full-flap config   [-]
                     % Revisit when airfoil is finalised.
 
 CD_0_clean  = 0.030;   % Parasite drag — clean (takeoff) config   [-]
-CD_0_land   = 0.055;   % Parasite drag — landing config (full flap)[-]
+CD_0_land   = 0.060;   % Parasite drag — landing config (full flap)[-]
                         % ~0.02 increment above clean; refine with drag buildup
 
 e       = 0.9;     % Oswald efficiency factor (RFP §4.3, clean)   [-]
 
 % ── Geometry ─────────────────────────────────────────────────────────────
-h_wing  = 3.0;     % Wing height above ground (ground-effect)     [m]
+h_wing  = 4.0;     % Wing height above ground (ground-effect)     [m]
                     % Typical high-wing STOL strut-braced config.
                     % Adjust when CAD geometry is finalised.
 
@@ -120,8 +120,8 @@ d_req = 152.4;     % 500 ft field-length requirement               [m]
 % DHC-6 Twin Otter: S ~ 39 m², AR ~ 10.  Caravan: S ~ 26 m², AR ~ 9.
 nS  = 120;
 nAR = 120;
-S_vec  = linspace(30, 75, nS);    % Wing reference area sweep     [m^2]
-AR_vec = linspace(3,  11, nAR);   % Aspect ratio sweep            [-]
+S_vec  = linspace(35, 80, nS);    % Wing reference area sweep     [m^2]
+AR_vec = linspace(5,  13, nAR);   % Aspect ratio sweep            [-]
 
 % =========================================================================
 %  SECTION 2 — PRE-ALLOCATE RESULT MATRICES
