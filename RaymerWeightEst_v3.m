@@ -204,7 +204,7 @@ LD_cruise  = E_m;   % L/D at cruise condition      [-]  ESTIMATE
 STOL_penalty = 1.05;    % multiplicative correction on EWF  [-]
 
 % --- Fuel reserve ---
-fuel_reserve = 0.01;     % 1% additional reserve over mission fuel  [-]
+fuel_reserve = 0.03;     % 3% additional reserve over mission fuel  [-]
 
 % --- Raymer convergence settings ---
 tol_kg   = 0.5;      % convergence tolerance [kg]

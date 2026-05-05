@@ -108,7 +108,7 @@ h_alt_vec = linspace(0, 6000, 301);           % [m]
 % Twin engine:   61 kN MTOW, 2 × 1050 shp (P_A doubled)
 % Both share the same zeta and fuel margin.
 
-W_To_arr  = [39867.9, 60425.8];                          % MTOW             [N]
+W_To_arr  = [42572, 64253];                          % MTOW             [N]
 n_eng_arr = [1, 2];                                  % engine count
 P_A_arr   = eta_prop * P_shp * shp2W * n_eng_arr;   % power available  [W]
 
