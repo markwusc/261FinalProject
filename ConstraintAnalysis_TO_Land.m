@@ -2,6 +2,7 @@
 % =========================================================================
 % CONSTRAINT ANALYSIS: Takeoff AND Landing Distance vs. Wing Area (S) and
 % Aspect Ratio (AR)
+
 % =========================================================================
 % PURPOSE:
 %   Sweep wing area S and aspect ratio AR and evaluate BOTH the takeoff
@@ -67,7 +68,6 @@ W_fuel_burned = W_fuel_total - W_fuel_remain;       % Fuel consumed on mission [
 W_land = W_To - W_fuel_burned;               % Aircraft landing weight [N]
 
 % ── Propulsion ───────────────────────────────────────────────────────────
-
 shp2W = 745.7; % conversion factor from hp to W
 P = 1050; % [hp] Engine rated shp, input one engine.
 eta = 0.8;
