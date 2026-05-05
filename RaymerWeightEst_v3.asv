@@ -62,11 +62,11 @@ clear; clc; close all;
 %  (payload, crew, mission, Raymer coefficients) are in Section 2 below.
 
 % --- Wing geometry ---
-S   = 44.9;     % Wing reference area          [m²]   ESTIMATE
+S   = 45.4;     % Wing reference area          [m²]   ESTIMATE
                 % Caravan: 26 m², Kodiak: 23 m², Twin Otter: 39 m²
                 % Use ~30-40 m² for initial sizing of a 9-pax STOL turboprop
 
-AR  = 7.2;     % Aspect ratio                  [-]    ESTIMATE
+AR  = 6.81;     % Aspect ratio                  [-]    ESTIMATE
                 % STOL aircraft typically AR = 8-12.
                 % Higher AR: better L/D, worse STOL (larger span → more
                 % induced drag penalty near ground, heavier wing structure).
@@ -154,7 +154,7 @@ fprintf('Twin-engine reference EWF band: %.3f – %.3f  (mean %.3f)\n\n', ...
 % RFP Config 1: 9 pax × (200 lb body + 50 lb baggage) = 2,250 lb = 1,021 kg
 % Per design decision: use 1,100 kg as the maximum design payload.
 % Crew is excluded from payload — it is part of OEW (see below).
-W_payload_kg = 1399;              % [kg]
+W_payload_kg = 1530.0;              % [kg]
 
 % --- Crew: 2 pilots, placed in OEW (not payload) ---
 % Crew weight does NOT change from flight to flight — it is a fixed part of
@@ -204,7 +204,7 @@ LD_cruise  = E_m;   % L/D at cruise condition      [-]  ESTIMATE
 STOL_penalty = 1.05;    % multiplicative correction on EWF  [-]
 
 % --- Fuel reserve ---
-fuel_reserve = 0.01;     % 1% additional reserve over mission fuel  [-]
+fuel_reserve = 0.03;     % 5% additional reserve over mission fuel  [-]
 
 % --- Raymer convergence settings ---
 tol_kg   = 0.5;      % convergence tolerance [kg]

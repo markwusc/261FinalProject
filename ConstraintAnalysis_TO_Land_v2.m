@@ -76,7 +76,7 @@ h_wing = 3.0;   % wing height above ground (high-wing STOL)   [m]
 mu_r           = 0.40;  % rolling friction — gravel runway (RFP constant) [-]
 mu_brake       = 0.50;  % braking friction — landing ground roll           [-]
 eta_rev        = 0.45;  % thrust reversal effectiveness (PT6A beta-pitch)  [-]
-liftKillFactor = 0.30;  % fraction of CL_max retained with spoilers active [-]
+liftKillFactor = 0.10;  % fraction of CL_max retained with spoilers active [-]
                          % Spoilers destroy lift → more weight on gear →
                          % larger normal force → larger braking friction force.
 

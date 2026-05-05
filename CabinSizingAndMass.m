@@ -1,4 +1,4 @@
-%% Cabin sizing and payload mass estimation
+ %% Cabin sizing and payload mass estimation
 
 
 %% Cabin sizing section
