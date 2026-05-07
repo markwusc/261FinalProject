@@ -64,7 +64,7 @@ throttle_frac = 1.00;
 
 %% Altitudes and velocity range
 
-h_cases = [0, 6000];                          % altitude cases [m]
+h_cases = [0, 4572];                          % altitude cases [m]
 [~, rho_cases, ~, ~] = StdAtmos_local(h_cases);
 
 V_min = 1.0;                                  % avoid division by zero [m/s]

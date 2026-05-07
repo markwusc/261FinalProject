@@ -2,30 +2,23 @@
 % =========================================================================
 % V-n / sustained-turn envelope updated from ConstraintAnalysis_TO_Land_v2.m
 %
-% This script uses the same shared aircraft parameters, propulsion model,
-% weights, and 5% margin design points from the constraint-analysis file.
+% Figures produced:
+%   Figure 1: V-n / sustained-turn envelopes at sea level and 4572 m
+%   Figure 2: Turn radius vs dynamic pressure q at sea level and 4572 m
 %
-% Design points taken from the 5% margin contour intersection in the
-% constraint sweep:
-%   Single engine: S = 39.85 m^2, AR = 6.85, b = 16.53 m
-%   Twin engine:   S = 47.89 m^2, AR = 5.68, b = 16.49 m
-%
-% IMPORTANT UPDATE:
-% The plotted x-axis is automatically limited to the rightmost valid point
-% of the PA = PR sustained-turn curve for each configuration and altitude.
-% To make this work for the twin-engine case, the calculation velocity range
-% must extend beyond the expected cutoff speed. The plot then crops itself.
-%
-% ADDED:
-% A turn radius vs dynamic pressure graph is included as Figure 2.
-% The minimum achievable turn-radius region is highlighted in yellow.
+% Figure 2 includes:
+%   - CLmax turn-radius limit
+%   - T_max / power-available turn-radius limit
+%   - n_struct turn-radius limit
+%   - minimum achievable turn-radius curve
+%   - yellow highlighted feasible turn-radius region
 %
 % StdAtmos is included as a local function, so this file can run standalone.
 % =========================================================================
 
 clear; clc; close all;
 
-%% Shared parameters from ConstraintAnalysis_TO_Land_v2.m
+%% Shared parameters
 
 % Physical constants
 g       = 9.81;          % gravitational acceleration [m/s^2]
@@ -36,12 +29,12 @@ shp2W   = 745.7;         % shaft horsepower to watts
 P_shp    = 1050;         % rated shaft power per engine [hp]
 eta_prop = 0.80;         % propeller efficiency [-]
 
-% Clean aerodynamic values used for cruise / V-n analysis
+% Clean aerodynamic values
 CD_0_clean   = 0.030;    % clean zero-lift drag coefficient [-]
 CL_max_clean = 1.8;      % clean maximum lift coefficient [-]
 e            = 0.90;     % Oswald efficiency factor [-]
 
-% Configuration weights and engine counts from constraint analysis
+% Configuration weights and engine counts
 W_To_arr  = [39867.9, 60425.8];     % MTOW for SE and TE [N]
 n_eng_arr = [1, 2];                 % engine count [-]
 
@@ -52,31 +45,29 @@ cfg_names = { ...
     'Single Engine  (42 kN, 1 x 1050 shp)', ...
     'Twin Engine    (61 kN, 2 x 1050 shp)' };
 
-% Design points selected from the 5% margin contour intersection in the
-% constraint-analysis sweep.
+% Design points selected from the 5% margin contour intersection
 S_design  = [39.849246231155774, 47.889447236180900];  % [m^2]
 AR_design = [ 6.854271356783920,  5.678391959798995];  % [-]
 b_design  = sqrt(S_design .* AR_design);               % [m]
 
-% Structural limit.
-% DHC-6 / Normal Category positive limit load factor.
+% Structural limit
+% DHC-6 / Normal Category positive limit load factor
 n_struct_pos = 3.8;     % positive limit load factor [-]
 
-% Sustained-turn power setting.
-% Use 1.00 for max power. Use 0.90 if matching the cruise-altitude analysis.
+% Sustained-turn power setting
 throttle_frac = 1.00;
 
 %% Altitudes and velocity range
 
-h_cases = [0, 6000];                          % altitude cases [m]
+% Sea level and 4572 m = 15,000 ft
+h_cases = [0, 4572];                          % [m]
 [~, rho_cases, ~, ~] = StdAtmos_local(h_cases);
 
 V_min = 1.0;                                  % avoid division by zero [m/s]
 
-% Use a high calculation limit so the twin-engine PA = PR curve actually
-% reaches its cutoff. The plot will be cropped to the valid PA curve max.
-V_max_calc = 250;                             % calculation max speed [m/s]
-V_vn = linspace(V_min, V_max_calc, 1200);     % velocity vector [m/s]
+% High calculation limit so PA = PR cutoff is captured
+V_max_calc = 250;                             % [m/s]
+V_vn = linspace(V_min, V_max_calc, 1200);     % [m/s]
 
 %% Storage arrays for turn-radius figure
 
@@ -95,7 +86,7 @@ for cfg = 1:2
     fprintf('    P_A  = %.1f kW\n\n', P_A_arr(cfg)/1000)
 end
 
-%% Figure 1: Build V-n diagrams
+%% Figure 1: V-n diagrams
 
 fig1 = figure('Name','Updated V-n Diagrams from Constraint Analysis', ...
               'Units','normalized','Position',[0.03 0.07 0.92 0.78]);
@@ -123,35 +114,26 @@ for cfg = 1:2
 
         q = 0.5 .* rho .* V_vn.^2;
 
-        % Power available with density lapse, matching the turboprop model
-        % used in the constraint analysis.
+        % Power available with density lapse
         P_A_h = throttle_frac * ac.P_A_SL * (rho / rho_SL);
 
-        % Lift-limited load factor:
-        % n = L/W = q S CLmax / W
+        % Lift-limited load factor
         n_CL = q .* ac.S .* ac.CLmax ./ ac.W;
 
         % Structural limit
         n_struct = ac.n_lim .* ones(size(V_vn));
 
-        % Sustained power limit:
-        %
-        % Drag in a steady level/turning condition:
-        % D = q S CD0 + k (nW)^2 / (qS)
-        %
-        % Power required:
+        % Sustained power limit
+        % D = q S CD0 + k(nW)^2/(qS)
         % P_R = D V
-        %
-        % Solving P_A = P_R for n:
-        % n^2 = [((P_A/V) - qSCD0)(qS)] / [kW^2]
+        % Solve P_A = P_R for n
         n_power_sq = (((P_A_h ./ V_vn) - ac.CD_0 .* q .* ac.S) .* ...
                        (q .* ac.S)) ./ (ac.k .* ac.W.^2);
 
         n_power = sqrt(n_power_sq);
         n_power(n_power_sq <= 0) = NaN;
 
-        % Find the maximum plotted velocity based on the rightmost valid
-        % point of the PA = PR curve.
+        % Find maximum velocity where PA = PR curve exists
         valid_power_idx = find(isfinite(n_power));
 
         if ~isempty(valid_power_idx)
@@ -162,15 +144,13 @@ for cfg = 1:2
 
         q_PA_max = 0.5 * rho * V_PA_max^2;
 
-        % Absolute aerodynamic reference limit based on E_max and equivalent
-        % thrust T = P/V. This is included only as a reference line.
+        % Aerodynamic reference limit based on E_max and equivalent thrust
         E_max = 1 / (2 * sqrt(ac.CD_0 * ac.k));
         T_equiv = P_A_h ./ V_vn;
         n_aero = E_max .* (T_equiv ./ ac.W);
         n_aero(n_aero < 0) = NaN;
 
-        % Achievable positive envelope.
-        % The aircraft is limited by whichever curve is lowest.
+        % Achievable positive envelope
         n_mat = [n_CL; n_struct; n_power; n_aero];
         n_env = min(n_mat, [], 1, 'omitnan');
         n_env(isnan(n_env)) = 0;
@@ -181,19 +161,17 @@ for cfg = 1:2
         V_corner   = sqrt(2 * ac.W * ac.n_lim / ...
                           (rho * ac.S * ac.CLmax));
 
-        %% Turn radius calculations for Figure 2
-        %
+        %% Turn-radius calculations for Figure 2
+
         % Coordinated level turn radius:
         % r = V^2 / (g*sqrt(n^2 - 1))
-        %
-        % Any case with n <= 1 cannot produce a steady level turn, so it is
-        % removed from the plotted radius curves.
 
         r_struct = V_vn.^2 ./ (g .* sqrt(n_struct.^2 - 1));
         r_CL     = V_vn.^2 ./ (g .* sqrt(n_CL.^2     - 1));
         r_power  = V_vn.^2 ./ (g .* sqrt(n_power.^2  - 1));
         r_env    = V_vn.^2 ./ (g .* sqrt(n_env.^2    - 1));
 
+        % Remove invalid points where steady level turn is impossible
         r_CL(n_CL <= 1)         = NaN;
         r_power(n_power <= 1)   = NaN;
         r_env(n_env <= 1)       = NaN;
@@ -202,6 +180,12 @@ for cfg = 1:2
         r_CL(~isfinite(r_CL))         = NaN;
         r_power(~isfinite(r_power))   = NaN;
         r_env(~isfinite(r_env))       = NaN;
+
+        % Remove points beyond PA = PR cutoff
+        r_CL(q > q_PA_max)     = NaN;
+        r_power(q > q_PA_max)  = NaN;
+        r_struct(q > q_PA_max) = NaN;
+        r_env(q > q_PA_max)    = NaN;
 
         % Store data for Figure 2
         case_count = case_count + 1;
@@ -215,17 +199,18 @@ for cfg = 1:2
         turn_data(case_count).r_power    = r_power;
         turn_data(case_count).r_env      = r_env;
 
-        %% Plot Figure 1: V-n diagram
+        %% Plot Figure 1
 
         figure(fig1)
-        ax = subplot(2,2,plot_idx); 
+        subplot(2,2,plot_idx);
         hold on; grid on; box on;
 
-        % Shaded achievable positive envelope
+        % Yellow achievable region
         fill([V_vn fliplr(V_vn)], [n_env zeros(size(n_env))], ...
              [1.0 0.9 0.1], ...
              'FaceAlpha',0.18, ...
-             'EdgeColor','none');
+             'EdgeColor','none', ...
+             'HandleVisibility','off');
 
         h1 = plot(V_vn, n_CL,     'b-', 'LineWidth',1.4);
         h2 = plot(V_vn, n_power,  'm-', 'LineWidth',1.4);
@@ -235,7 +220,6 @@ for cfg = 1:2
                   'LineWidth',1.5);
         h5 = plot(V_vn, n_env,    'r-', 'LineWidth',2.2);
 
-        % Speed markers
         xline(V_stall_1g, ':', '$V_{S,1g}$', ...
               'Interpreter','latex', ...
               'LabelVerticalAlignment','bottom');
@@ -267,7 +251,6 @@ for cfg = 1:2
             'Location','eastoutside', ...
             'FontSize',7)
 
-        % x-axis is limited by the PA = PR curve max for each subplot.
         xlim([0 V_PA_max - 1])
         ylim([0 ac.n_lim + 1.0])
 
@@ -277,7 +260,7 @@ for cfg = 1:2
 end
 
 figure(fig1)
-sgtitle(sprintf(['Updated V-n / Sustained-Turn Envelopes from Constraint Analysis  |  ' ...
+sgtitle(sprintf(['Updated V-n / Sustained-Turn Envelopes  |  ' ...
                  'CL_{max,clean}=%.1f, CD_{0,clean}=%.3f, e=%.2f, throttle=%.0f%%'], ...
                  CL_max_clean, CD_0_clean, e, 100*throttle_frac), ...
         'FontSize',11)
@@ -285,91 +268,138 @@ sgtitle(sprintf(['Updated V-n / Sustained-Turn Envelopes from Constraint Analysi
 print(fig1, 'VN_Diagrams_updated.png', '-dpng', '-r1200')
 
 %% Figure 2: Turn radius vs dynamic pressure q
+% One subplot for single-engine and one subplot for twin-engine.
+% Each subplot shows sea level and 4572 m.
+%
+% Colors:
+%   Blue    = CLmax turn-radius limit
+%   Magenta = T_max / PA = PR turn-radius limit
+%   Black   = n_struct turn-radius limit
+%   Red     = minimum achievable turn radius
+%
+% Line style:
+%   Solid  = sea level
+%   Dashed = 4572 m
 
 fig2 = figure('Name','Turn Radius vs Dynamic Pressure', ...
-              'Units','normalized','Position',[0.03 0.07 0.92 0.78]);
+              'Units','normalized','Position',[0.04 0.12 0.90 0.58]);
 
-for idx = 1:case_count
+all_names = {turn_data.cfg_name};
+all_h     = [turn_data.h];
 
-    q        = turn_data(idx).q;
-    q_PA_max = turn_data(idx).q_PA_max;
+for cfg = 1:2
 
-    r_struct = turn_data(idx).r_struct;
-    r_CL     = turn_data(idx).r_CL;
-    r_power  = turn_data(idx).r_power;
-    r_env    = turn_data(idx).r_env;
-
-    ax = subplot(2,2,idx);
+    subplot(1,2,cfg);
     hold on; grid on; box on;
 
-    % Automatically choose a clean y-limit by ignoring extremely large
-    % values near n = 1.
-    r_all = [r_CL(:); r_power(:); r_struct(:); r_env(:)];
+    % Find sea-level and 4572 m data for this configuration
+    idx_sl = find(strcmp(all_names, cfg_names{cfg}) & abs(all_h - 0) < 1e-6, ...
+                  1, 'first');
+
+    idx_4572 = find(strcmp(all_names, cfg_names{cfg}) & abs(all_h - 4572) < 1e-6, ...
+                    1, 'first');
+
+    if isempty(idx_sl) || isempty(idx_4572)
+        error('Missing turn_data for %s at sea level or 4572 m.', cfg_names{cfg});
+    end
+
+    % Pull sea-level data
+    q_sl        = turn_data(idx_sl).q;
+    qmax_sl     = turn_data(idx_sl).q_PA_max;
+    r_CL_sl     = turn_data(idx_sl).r_CL;
+    r_power_sl  = turn_data(idx_sl).r_power;
+    r_struct_sl = turn_data(idx_sl).r_struct;
+    r_env_sl    = turn_data(idx_sl).r_env;
+
+    % Pull 4572 m data
+    q_4572        = turn_data(idx_4572).q;
+    qmax_4572     = turn_data(idx_4572).q_PA_max;
+    r_CL_4572     = turn_data(idx_4572).r_CL;
+    r_power_4572  = turn_data(idx_4572).r_power;
+    r_struct_4572 = turn_data(idx_4572).r_struct;
+    r_env_4572    = turn_data(idx_4572).r_env;
+
+    % Valid minimum-radius points for highlighting
+    valid_env_sl   = isfinite(r_env_sl)   & q_sl   <= qmax_sl;
+    valid_env_4572 = isfinite(r_env_4572) & q_4572 <= qmax_4572;
+
+    % Determine q and r limits
+    q_plot_max = max([qmax_sl, qmax_4572]);
+
+    r_all = [ ...
+        r_CL_sl(:); r_power_sl(:); r_struct_sl(:); r_env_sl(:); ...
+        r_CL_4572(:); r_power_4572(:); r_struct_4572(:); r_env_4572(:)];
+
     r_all = r_all(isfinite(r_all) & r_all > 0);
 
-    if ~isempty(r_all)
-        r_upper = prctile(r_all, 95);
-    else
+    if isempty(r_all)
         r_upper = 1000;
+    else
+        r_upper = 1.15 * prctile(r_all, 95);
     end
 
-    % Highlight the feasible/minimum turn radius region in the same yellow
-    % color as the V-n diagram. This is the region above the minimum
-    % achievable radius curve and below the selected plot limit.
-    r_env_fill = r_env;
-    r_env_fill(~isfinite(r_env_fill)) = NaN;
-
-    valid_fill = isfinite(r_env_fill) & q <= q_PA_max;
-
-    if any(valid_fill)
-        q_fill = q(valid_fill);
-        r_fill = r_env_fill(valid_fill);
+    % Highlight feasible region above minimum achievable turn-radius curve
+    % Sea level
+    if any(valid_env_sl)
+        q_fill = q_sl(valid_env_sl);
+        r_fill = r_env_sl(valid_env_sl);
 
         fill([q_fill fliplr(q_fill)], ...
-             [r_fill 1.15*r_upper*ones(size(r_fill))], ...
+             [r_fill r_upper*ones(size(r_fill))], ...
              [1.0 0.9 0.1], ...
-             'FaceAlpha',0.18, ...
-             'EdgeColor','none');
+             'FaceAlpha',0.14, ...
+             'EdgeColor','none', ...
+             'HandleVisibility','off');
     end
 
-    h1 = plot(q, r_CL,     'b-', 'LineWidth',1.4);
-    h2 = plot(q, r_power,  'm-', 'LineWidth',1.4);
-    h3 = plot(q, r_struct, 'k-', 'LineWidth',1.4);
-    h4 = plot(q, r_env,    'r-', 'LineWidth',2.2);
+    % 4572 m
+    if any(valid_env_4572)
+        q_fill = q_4572(valid_env_4572);
+        r_fill = r_env_4572(valid_env_4572);
+
+        fill([q_fill fliplr(q_fill)], ...
+             [r_fill r_upper*ones(size(r_fill))], ...
+             [1.0 0.9 0.1], ...
+             'FaceAlpha',0.07, ...
+             'EdgeColor','none', ...
+             'HandleVisibility','off');
+    end
+
+    % Sea-level curves: solid
+    h1 = plot(q_sl, r_CL_sl,     'b-', 'LineWidth',1.5);
+    h2 = plot(q_sl, r_power_sl,  'm-', 'LineWidth',1.5);
+    h3 = plot(q_sl, r_struct_sl, 'k-', 'LineWidth',1.5);
+    h4 = plot(q_sl, r_env_sl,    'r-', 'LineWidth',2.4);
+
+    % % 4572 m curves: dashed
+    % h5 = plot(q_4572, r_CL_4572,     'b--', 'LineWidth',1.5);
+    % h6 = plot(q_4572, r_power_4572,  'm--', 'LineWidth',1.5);
+    % h7 = plot(q_4572, r_struct_4572, 'k--', 'LineWidth',1.5);
+    h8 = plot(q_4572, r_env_4572,    'b--', 'LineWidth',2.4);
 
     xlabel('Dynamic Pressure, $q$ [Pa]', 'Interpreter','latex')
     ylabel('Turn Radius, $r$ [m]', 'Interpreter','latex')
 
-    if turn_data(idx).h == 0
-        h_label = 'Sea Level';
-    else
-        h_label = sprintf('h = %.0f m', turn_data(idx).h);
-    end
-
-    title(sprintf('%s — %s', turn_data(idx).cfg_name, h_label), ...
+    title(cfg_names{cfg}, ...
           'Interpreter','none', ...
           'FontSize',10)
 
-    legend([h1 h2 h3 h4], ...
-        {'$C_{L,max,clean}$ radius', ...
-         '$P_A = P_R$ radius', ...
-         '$n_{struct}$ radius', ...
-         'Minimum achievable radius'}, ...
+    xlim([0 q_plot_max])
+    ylim([0 r_upper])
+
+    % Legend outside so it does not cover lines
+    legend([h1 h2 h3 h4 h8], ...
+        '$C_{L,max}$ SL', ...
+         '$T_{max}$ / $P_A=P_R$ SL', ...
+         '$n_{struct}$ SL', ...
+         'Minimum radius SL', 'Min Turn Radius - 4572 m', ...
         'Interpreter','latex', ...
         'Location','eastoutside', ...
         'FontSize',7)
 
-    % Limit q-axis using the same PA = PR cutoff logic as the V-n plots.
-    xlim([0 q_PA_max])
-
-    if ~isempty(r_all)
-        ylim([0 1.15*r_upper/3])
-    end
-
 end
 
-figure(fig2)
-sgtitle('Turn Radius vs Dynamic Pressure  |  Updated Constraint-Analysis Aircraft', ...
+sgtitle('Turn Radius vs Dynamic Pressure  |  Constraint Limits and Minimum Radius', ...
         'FontSize',11)
 
 print(fig2, 'TurnRadius_vs_q_updated.png', '-dpng', '-r1200')
