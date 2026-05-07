@@ -4,7 +4,9 @@
 %
 % Goal:
 %   Estimate the total spoiler planform area required to achieve a desired
-%   landing parasite-drag coefficient (CD0) increase.
+%   landing parasite-drag coefficient (CD0) increase, then back out the
+%   spoiler deflection angle needed to reach a glide CD0 target using that
+%   same spoiler area.
 %
 % Model:
 %   1) Compute the additional drag coefficient needed in landing:
@@ -21,6 +23,10 @@
 %   4) Solve for the required total spoiler planform area:
 %        S_spoiler_total = A_spoiler_eq / (Cd_spoiler_normal * sin(theta))
 %
+%   5) Re-use the solved spoiler area and invert the same relation to estimate
+%      the spoiler deflection angle needed for a specified glide CD0 target:
+%        theta = asin( (Delta_CD0_glide * S_ref) / (Cd_spoiler_normal * S_spoiler_total) )
+%
 % Notes:
 %   - The 60 deg spoiler angle is assumed to be measured from the wing
 %     surface / local chord line toward the free stream. If your convention
@@ -28,16 +34,15 @@
 %   - Cd_spoiler_normal is an engineering estimate for a bluff plate normal
 %     to the flow. Replace this with wind-tunnel, CFD, or handbook data if
 %     you have spoiler-specific coefficients.
+%   - The glide-angle solve is only physically valid when the asin() argument
+%     lies in [-1, 1]. If it does not, the requested glide CD0 cannot be
+%     achieved with the same spoiler area and this simple projected-area model.
 %
 % Sources used beyond the attached files:
-%   NASA Glenn Research Center, "Drag Coefficient" — Cd definition and
-%   reference-area convention:
-%     Cd = D / (0.5 * rho * V^2 * A)
+%   NASA Glenn Research Center, "Drag Equation" — drag depends on body size,
+%   shape, and inclination to the flow.
 %   NASA Glenn Research Center, "Shape Effects on Drag" — flat plate as a
 %   high-drag bluff-body baseline and dependence on inclination.
-%   Typical flat-plate-normal drag coefficient used here by default:
-%     Cd_spoiler_normal = 1.28 (common textbook value for a flat plate
-%     normal to the flow; update if your spoiler geometry is different).
 %
 % All quantities SI unless stated otherwise.
 % =========================================================================
@@ -47,11 +52,11 @@ clear; clc; close all;
 % =========================================================================
 %  SECTION 1 — INPUTS
 % =========================================================================
-  
+
 % Landing drag target and baseline (without spoilers).
 % Set these to match your airplane's landing configuration.
-CD0_landing_target   = 0.060;   % desired total landing CD0            [-]
-CD0_landing_baseline = 0.02757;   % current landing CD0 without spoilers  [-]
+CD0_landing_target   = 0.150;   % desired total landing CD0            [-]
+CD0_landing_baseline = 0.027;   % current landing CD0 without spoilers  [-]
 
 % Wing reference area used to normalize CD0.
 % Use the same S_ref used in your drag build-up.
@@ -64,6 +69,11 @@ Cd_spoiler_normal      = 1.28;  % normal-to-flow drag coefficient        [-]
 % Optional split into multiple equal-area spoiler panels.
 % The script solves the total area, then divides by this count.
 n_spoilers = 2;                % number of spoiler panels               [-]
+
+% Glide target to back-solve a deflection angle using the same spoiler area.
+CD0_glide_target   = 0.330;    % desired total glide CD0                [-]
+CD0_glide_baseline = CD0_landing_baseline;
+% Keep the same no-spoiler baseline unless you have a separate glide baseline.
 
 % =========================================================================
 %  SECTION 2 — REQUIRED DRAG INCREMENT
@@ -107,7 +117,29 @@ spoiler_to_wing_ratio = S_spoiler_total / S_ref;
 projected_area_total   = S_spoiler_total * projection_factor;
 
 % =========================================================================
-%  SECTION 4 — CONSOLE OUTPUT
+%  SECTION 4 — REQUIRED SPOILER DEFLECTION FOR GLIDE CD0 TARGET
+% =========================================================================
+% Use the same spoiler area and the same projected-area model to estimate
+% the spoiler deflection angle required to reach a different CD0 target.
+
+Delta_CD0_glide_req = CD0_glide_target - CD0_glide_baseline;
+
+if Delta_CD0_glide_req <= 0
+    error('Glide CD0 target must be greater than the glide baseline CD0. Current Delta_CD0 = %.5f', Delta_CD0_glide_req);
+end
+
+sin_theta_glide_req = (Delta_CD0_glide_req * S_ref) / (Cd_spoiler_normal * S_spoiler_total);
+
+if abs(sin_theta_glide_req) <= 1
+    spoiler_deflection_glide_deg = asind(sin_theta_glide_req);
+    glide_angle_feasible = true;
+else
+    spoiler_deflection_glide_deg = NaN;
+    glide_angle_feasible = false;
+end
+
+% =========================================================================
+%  SECTION 5 — CONSOLE OUTPUT
 % =========================================================================
 
 fprintf('\n');
@@ -137,12 +169,29 @@ fprintf('    Achieved Delta_CD0   = %.5f\n', Delta_CD0_check);
 fprintf('    Landing CD0 checked  = %.5f\n', CD0_landing_check);
 fprintf('    Spoiler/Wing ratio   = %.3f %%\n\n', 100 * spoiler_to_wing_ratio);
 
+fprintf('  Glide Deflection Solve\n');
+fprintf('    CD0_glide_target     = %.5f\n', CD0_glide_target);
+fprintf('    CD0_glide_baseline   = %.5f\n', CD0_glide_baseline);
+fprintf('    Required Delta_CD0   = %.5f\n', Delta_CD0_glide_req);
+fprintf('    sin(theta) required  = %.5f\n', sin_theta_glide_req);
+if glide_angle_feasible
+    fprintf('    Spoiler angle for glide = %.2f deg\n\n', spoiler_deflection_glide_deg);
+else
+    fprintf('    Spoiler angle for glide = NOT PHYSICALLY FEASIBLE with this area\n');
+    fprintf('    (requires |sin(theta)| > 1 in the current projected-area model)\n\n');
+end
+
 fprintf('==========================================================================\n');
 fprintf('  RESULT: Use a total spoiler planform area of %.5f m^2\n', S_spoiler_total);
+if glide_angle_feasible
+    fprintf('  RESULT: Glide spoiler angle = %.2f deg\n', spoiler_deflection_glide_deg);
+else
+    fprintf('  RESULT: Glide spoiler angle cannot be solved with the present inputs\n');
+end
 fprintf('==========================================================================\n\n');
 
 % =========================================================================
-%  SECTION 5 — OPTIONAL SIMPLE PLOT
+%  SECTION 6 — OPTIONAL SIMPLE PLOT
 % =========================================================================
 
 figure('Name','Spoiler Area Sizing','Units','normalized','Position',[0.18 0.20 0.50 0.42]);
@@ -153,4 +202,3 @@ ylabel('Landing CD_0  [-]');
 title(sprintf('Landing Drag Target and Spoiler-Sized Check  (S_{spoiler,total} = %.4f m^2)', S_spoiler_total));
 grid on;
 box on;
-
