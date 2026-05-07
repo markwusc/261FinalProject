@@ -55,8 +55,8 @@ clear; clc; close all;
 
 % Landing drag target and baseline (without spoilers).
 % Set these to match your airplane's landing configuration.
-CD0_landing_target   = 0.150;   % desired total landing CD0            [-]
 CD0_landing_baseline = 0.027;   % current landing CD0 without spoilers  [-]
+CD0_landing_target   = CD0_landing_baseline+0.04;   % desired total landing CD0            [-]
 
 % Wing reference area used to normalize CD0.
 % Use the same S_ref used in your drag build-up.

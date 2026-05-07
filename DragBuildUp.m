@@ -119,7 +119,7 @@ Lambda_m_vt = 0.0;
 %  FUSELAGE
 % ─────────────────────────────────────────────────────────────────────────
 l_fuse   = 9.9001;    % total fuselage length                       [m]
-W_fuse   = 1.75;      % fuselage width                              [m]
+W_fuse   = 1.95;      % fuselage width                              [m]
 H_fuse   = 2.00;      % fuselage height                             [m]
 r_fillet = 0.10;      % corner fillet radius                        [m]
 
