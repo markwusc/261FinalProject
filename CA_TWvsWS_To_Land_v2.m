@@ -135,7 +135,8 @@ W_land        = W_To - W_fuel_burned;              % landing weight [N]
 
 % ── Drag scaling ──────────────────────────────────────────────────────────
 CD_0_TO   = 2.5 * CD_0_clean;   % takeoff partial flap  → 0.075   [-]
-CD_0_land = 5.0 * CD_0_clean;   % full flap + spoiler   → 0.150   [-]
+%CD_0_land = 5.0 * CD_0_clean;   % full flap + spoiler   → 0.150   [-]
+CD_0_land = 0.3;
 % NOTE: CD_0_land = 0.150 is on the high end for this class
 % (typical STOL range 0.060–0.100). Revisit after flap drag buildup.
 
