@@ -1,0 +1,837 @@
+% ReferenceMission_v1.m
+% =========================================================================
+% PUDO 670 — Reference Mission Performance Analysis
+% Configuration 1  |  90% Payload  |  450 nmi Total Range
+% =========================================================================
+%
+% PURPOSE:
+%   Compute the mission fuel weight, all segment weights, mission timing,
+%   horizontal distances, and generate performance plots for the PUDO 670
+%   reference mission.
+%
+% MISSION PROFILE  (climb, cruise, descent are plotted; ground ops excluded):
+%   (1) Warm-up & taxi        Raymer ff = 0.990
+%   (2) Takeoff               Raymer ff = 0.995
+%   (3) Climb  SL → 4572 m   Raymer ff = 0.980  for FUEL
+%                             Kinematic ROC sim   for DISTANCE / TIME only
+%   (4) Cruise 67 m/s 4572m  Breguet ff          from required cruise range
+%   (5) Descent 1000 fpm      Raymer ff = 0.990  for FUEL
+%                             Drag balance        for THROTTLE CHART only
+%   (6) Landing               Raymer ff = 0.992
+%   [Reserve] 45-min loiter   Breguet endurance at sea level, best CL
+%
+% ITERATION STRATEGY:
+%   W6_target (required weight at end of landing rollout) is pre-solved from
+%   the loiter constraint: burn exactly to W_dry in 45 min at sea level.
+%   W_fuel is iterated via a first-order Newton step until W6_computed = W6_target.
+%   ff_cruise (Breguet) updates each iteration because the required cruise
+%   range = 450 nmi − d_climb − d_descent, and d_climb depends on W0.
+%
+% KEY DESIGN DECISIONS EMBEDDED IN THIS SCRIPT:
+%   - Climb TAS = 70 m/s fixed (team decision)
+%   - Weight held constant during kinematic climb sim (no per-dt fuel burn)
+%   - CD0 = 0.0288 for ALL phases (clean config assumed from immediately
+%     after liftoff; no climb-flap CD0 unless team revises this decision)
+%   - Power lapse: P_A(h) = sigma(h) × P_A_SL  (linear, project convention)
+%   - Loiter at sea level (conservative; maximum fuel burn rate)
+%   - Cruise L/D = 12.50 (CruiseOptimization_v3.m, 130 KTAS at 4572 m)
+%
+% CALLS:   StdAtmos(h)  — returns [P, rho, T, mu] for scalar or array h [m]
+%
+% OUTPUTS:
+%   Command window — converged weight statement, segment weights,
+%                    fuel fractions, distances, timing, climb performance
+%   Figure 1       — Altitude & TAS vs mission time, colored by distance
+%   Figure 2       — Throttle vs time: climb (subplot 1), cruise (subplot 2),
+%                    descent (subplot 3)
+%
+% DESIGN FLAGS IN THIS SCRIPT (search ⚠):
+%   Line ~100  OEW is back-derived from Raymer; update if design changes
+%   Line ~120  Raymer ff_climb and kinematic fuel are intentionally decoupled
+%   Line ~140  V_horiz constraint checked numerically during climb sim
+%
+% AUTHORS: PUDO 670 Design Team
+% VERSION: 1.0
+% DATE:    May 2026
+% =========================================================================
+
+clear; clc; close all;
+
+
+%% =========================================================================
+%  SECTION 1 — AIRCRAFT DESIGN CONSTANTS
+%  Source: RaymerWeightEst_v3.m and CruiseOptimization_v3.m (converged).
+%  Update this block if wing geometry, propulsion, or drag estimates change.
+% =========================================================================
+
+g        = 9.81;           % gravitational acceleration               [m/s²]
+rho_SL   = 1.225;          % ISA sea-level air density                [kg/m³]
+
+% --- Wing & Aerodynamics -------------------------------------------------
+S        = 37.1;           % reference wing area                      [m²]
+AR       = 6.76;           % aspect ratio                             [-]
+e        = 0.90;           % Oswald efficiency factor (clean)         [-]
+CD0      = 0.0288;         % parasite drag coefficient, clean config   [-]
+%   ⚠ CD0 = 0.0288 applied to ALL flight phases per team decision.
+%   Flaps assumed retracted immediately after liftoff. Revisit if a
+%   dedicated climb-flap drag polar is developed.
+k        = 1 / (pi * AR * e);   % induced drag factor                [-]
+
+% --- Propulsion: PT6A-60A ------------------------------------------------
+P_shp    = 1050;                 % rated shaft power                  [shp]
+P_SL_W   = P_shp * 745.7;       % sea-level shaft power              [W]
+eta_p    = 0.80;                 % propeller efficiency               [-]
+P_A_SL   = eta_p * P_SL_W;      % sea-level propulsive power         [W]
+%   Thrust at speed V:  T = P_A(h) / V
+%   Power lapse:        P_A(h) = sigma(h) × P_A_SL  (linear, project std)
+%   eta_p is applied ONCE here to convert shaft power to thrust power.
+
+%   SFC conversion: [lb/(hp·hr)] → [kg/(W·s)]
+%   1 lb/(hp·hr) × (0.4536 kg/lb) ÷ (745.7 W/hp × 3600 s/hr)
+SFCp_imp = 0.548;                          % SFC                     [lb/(hp·hr)]
+SFCp_SI  = SFCp_imp * 0.4536 / (745.7 * 3600);  % SFC             [kg/(W·s)]
+
+% --- Cruise aerodynamics (from CruiseOptimization_v3.m) ------------------
+LD_cruise  = 12.50;   % L/D at 130 KTAS cruise point                 [-]
+V_cruise   = 67.0;    % cruise TAS (~130 KTAS)                       [m/s]
+h_cruise   = 4572.0;  % cruise altitude (15,000 ft)                  [m]
+
+% --- Best-endurance aerodynamics (loiter reserve at sea level) -----------
+%   Propeller aircraft maximise endurance at CL_BE = sqrt(3·CD0/k),
+%   not at L/D_max. At this CL: CD_BE = 4·CD0.
+%   Reference: Anderson "Introduction to Flight" §6.6;
+%              RaymerWeightEst_v3.m Section 3.
+CL_BE = sqrt(3 * CD0 / k);  % best-endurance lift coefficient        [-]
+CD_BE = 4 * CD0;             % best-endurance drag coefficient        [-]
+LD_BE = CL_BE / CD_BE;       % best-endurance L/D                    [-]
+
+%   Stall check: CL_BE must not exceed clean stall CL (~2.4 for this wing)
+if CL_BE > 2.4
+    warning('PUDO670:LoiterStall', ...
+        ['CL_BE = %.4f exceeds clean CL_max = 2.4.\n' ...
+         'Loiter is stall-limited; clamping to CL_BE = 2.4.'], CL_BE);
+    CL_BE = 2.4;
+    CD_BE = CD0 + k * CL_BE^2;
+    LD_BE = CL_BE / CD_BE;
+end
+
+%   Breguet endurance constant K_loiter  [N^(1/2)]
+%   E = K_loiter × [W_end^(−0.5) − W_start^(−0.5)]  (W in Newtons, E in s)
+%   Derivation and unit analysis: see RaymerWeightEst_v3.m header.
+K_loiter = (eta_p / (g * SFCp_SI)) ...
+         * (CL_BE^1.5 / CD_BE) ...
+         * sqrt(2 * rho_SL * S);
+
+
+%% =========================================================================
+%  SECTION 2 — MISSION PARAMETERS AND WEIGHT SETUP
+% =========================================================================
+
+% --- Total required mission range ----------------------------------------
+R_total_nmi = 450;                     % RFP ground-track requirement  [nmi]
+R_total_m   = R_total_nmi * 1852;      % converted to metres           [m]
+
+% --- Payload: Config 1 at 90% (RFP reference mission definition) ---------
+%   Config 1 full payload from PayloadBuildUp_v1.csv:
+%     9 pax body weight     816.47 kg
+%     9 pax baggage         204.12 kg
+%     1 flight attendant     90.72 kg
+%     1 FA baggage            9.07 kg
+%     10 removable seats    100.00 kg
+%     ─────────────────────────────────
+%     TOTAL               1220.37 kg
+%   Reference mission uses 90% of this (partially-loaded aircraft dispatch).
+W_pld_C1_full = 1220.37;               % Config 1 full payload         [kg]
+W_payload_ref = 0.90 * W_pld_C1_full;  % 90% reference mission payload [kg]
+
+% --- Operating Empty Weight (OEW) ----------------------------------------
+%   OEW = structural empty weight + crew weight (2 pilots, 181.44 kg).
+%   Source: RaymerWeightEst_v3.m single-engine convergence (W0 = 4077 kg,
+%   ζ = 0.1313, W_fuel = 535 kg, W_payload+crew = 1580 kg).
+%   OEW is a fixed property of the airframe — it does NOT change between
+%   missions or between iterations.
+%   ⚠ FLAG: Re-run RaymerWeightEst_v3.m if S, AR, CD0, or e change,
+%   and update W_OEW_kg and W_crew_kg accordingly.
+W_OEW_kg  = 2150.0;                    % OEW (structural + crew)       [kg]
+W_crew_kg = 2 * 200 * 0.4536;          % 2 pilots × 200 lb each        [kg]
+%   NOTE: crew is embedded in W_OEW_kg. Do NOT add W_crew_kg separately
+%   to the weight equation — it is listed here for bookkeeping only.
+
+% --- Non-fuel weight (constant across all iterations) --------------------
+W_dry_kg  = W_OEW_kg + W_payload_ref; % OEW + mission payload          [kg]
+W_dry_N   = W_dry_kg * g;             %                                [N]
+
+% --- Raymer historical fuel fractions (fixed, pre-computed) --------------
+%   Source: Raymer Table 3.2; project conventions in RaymerWeightEst_v3.m.
+%   These fractions account for the fuel burned in each ground/air segment.
+ff_warmup  = 0.990;   % warm-up and taxi (~10 min)
+ff_takeoff = 0.995;   % STOL takeoff over 50 ft obstacle
+ff_climb   = 0.980;   % climb to 4572 m — Raymer historical (propeller)
+%   ⚠ NOTE: ff_climb = 0.980 governs FUEL consumption in climb.
+%   The kinematic ROC simulation (Section 5) gives DISTANCE and TIME only.
+%   These two quantities are intentionally decoupled (team decision).
+%   Coupling them would require per-dt weight updates, which are not used.
+ff_descent = 0.990;   % descent — Raymer historical (propeller)
+ff_landing = 0.992;   % landing rollout and taxi-in
+
+% --- Config 2 fuel fraction (initial guess for iteration only) -----------
+%   zeta_C2 = W_fuel/W0 from RaymerWeightEst_v3.m, single-engine, max payload.
+%   Used only to seed the iteration; the converged value will differ
+%   because the reference mission payload (90% Config 1) is lower.
+zeta_C2   = 0.1313;
+
+% --- Loiter reserve duration ---------------------------------------------
+t_loiter_s = 45 * 60;   % 45-minute loiter reserve at sea level       [s]
+%   Loiter at sea level is the conservative choice (highest air density
+%   → highest drag power → fastest fuel burn → most conservative reserve).
+
+% --- Climb simulation parameters -----------------------------------------
+V_climb  = 70.0;    % fixed climb TAS (team decision)                 [m/s]
+dt_climb = 1.0;     % time step for kinematic climb simulation        [s]
+%   The climb sim uses a fixed weight (W at bottom of climb) and 1-second
+%   steps. V = 70 m/s was chosen to maintain V_horiz = V·cos(γ) ≥ 67 m/s
+%   throughout the climb. This is verified numerically below.
+
+
+%% =========================================================================
+%  SECTION 3 — DESCENT GEOMETRY (weight-independent)
+%
+%  The descent profile is defined by two constraints:
+%    (1) Vertical rate = 1000 ft/min  (= ROD_ms m/s)
+%    (2) Horizontal speed = 67 m/s exactly
+%
+%  These constraints fully determine the glide speed (TAS), descent angle,
+%  time to descend, and horizontal distance — all independent of weight.
+%
+%  Whether the aircraft needs throttle in the descent is checked in Section 8
+%  via the along-path force balance. The result is used only for the
+%  throttle chart; descent fuel uses the Raymer ff_descent.
+% =========================================================================
+
+ROD_fpm      = 1000;                         % rate of descent         [ft/min]
+ROD_ms       = ROD_fpm * 0.3048 / 60;        % rate of descent         [m/s]
+V_horiz_req  = 67.0;                          % required horiz speed    [m/s]
+
+%   Glide speed: the TAS that simultaneously gives 67 m/s horizontal
+%   and 1000 fpm vertical.  V = sqrt(V_h^2 + V_v^2)
+V_descent    = sqrt(V_horiz_req^2 + ROD_ms^2);   % glide speed TAS     [m/s]
+gamma_desc   = atan2(ROD_ms, V_horiz_req);         % descent angle (rad), positive = nose down
+
+t_desc_s     = h_cruise / ROD_ms;           % time to descend SL→cruise alt [s]
+t_desc_min   = t_desc_s / 60;               %                              [min]
+d_desc_m     = V_horiz_req * t_desc_s;      % horizontal distance in descent [m]
+
+
+%% =========================================================================
+%  SECTION 4 — LOITER RESERVE: TARGET LANDING WEIGHT W6_target
+%
+%  We want the aircraft to arrive at landing (after rollout, ff_landing)
+%  with exactly enough fuel for 45 minutes of loiter at best endurance,
+%  burning down to W_dry (zero propulsion fuel remaining).
+%
+%  From the Breguet endurance equation (W in Newtons):
+%    E = K_loiter × [W_dry_N^(−0.5) − W6_N^(−0.5)]
+%
+%  Solving for W6_N (weight at START of loiter = end of landing rollout):
+%    W6_N^(−0.5) = W_dry_N^(−0.5) − E / K_loiter
+%    W6_N        = (W_dry_N^(−0.5) − E / K_loiter)^(−2)
+%
+%  W6_target is FIXED across iterations because W_dry = OEW + payload
+%  does not change between fuel iterations.
+% =========================================================================
+
+W6_target_N      = 1 / (W_dry_N^(-0.5) - t_loiter_s / K_loiter)^2;  % [N]
+W6_target_kg     = W6_target_N / g;                                    % [kg]
+W_loiter_fuel_kg = W6_target_kg - W_dry_kg;  % loiter reserve fuel mass [kg]
+ff_loiter        = W_dry_N / W6_target_N;     % loiter fuel fraction      [-]
+%   Interpretation: the loiter burns (1 − ff_loiter) × W6 of fuel [in N],
+%   leaving W_dry at the end of loiter (tanks dry except unusable).
+
+
+%% =========================================================================
+%  SECTION 5 — FUEL WEIGHT ITERATION
+%
+%  GOAL: find W_fuel such that W6_computed = W6_target.
+%
+%  Each iteration:
+%   a) W0 = W_dry + W_fuel
+%   b) Apply ff_warmup, ff_takeoff → W2 (weight at base of climb)
+%   c) Kinematic climb sim (scalars only): fixed weight W2·g throughout.
+%      At each dt: T=P_A/V, D=q·S·CD, ROC=V·(T−D)/W, V_h=V·cos(γ)
+%      Accumulate d_climb_m, t_climb_s.
+%   d) d_cruise = R_total − d_climb − d_descent
+%   e) ff_cruise = exp(−d_cruise·g·SFCp_SI / (eta_p·LD_cruise))  [Breguet]
+%   f) Weight chain: W3=W2·ff_climb, W4=W3·ff_cruise, W5=W4·ff_descent,
+%      W6=W5·ff_landing
+%   g) Residual = W6_computed − W6_target
+%   h) Newton update: W_fuel -= residual / ff_product
+%      (since W6 ≈ W0·ff_product and W0 = W_dry + W_fuel)
+%
+%  The d_climb dependence on W0 makes this a true iteration.
+%  Convergence is fast (~5–8 iterations) because d_climb is weakly
+%  sensitive to small changes in W_fuel (the ratio dROC/dW is small).
+% =========================================================================
+
+tol_kg   = 0.01;    % convergence tolerance on residual                [kg]
+max_iter = 100;     % safety cap on iterations
+
+%   Initial fuel weight: solve W_fuel = zeta_C2 × (W_dry + W_fuel)
+%     → W_fuel = zeta_C2 × W_dry / (1 − zeta_C2)
+W_fuel_kg = zeta_C2 * W_dry_kg / (1 - zeta_C2);
+
+% ── Print header ──────────────────────────────────────────────────────────
+fprintf('╔══════════════════════════════════════════════════════════════════════╗\n');
+fprintf('║       PUDO 670  —  REFERENCE MISSION ANALYSIS                       ║\n');
+fprintf('║       Config 1  |  90%% Payload  |  450 nmi Total Range              ║\n');
+fprintf('╠══════════════════════════════════════════════════════════════════════╣\n');
+fprintf('║  DESCENT GEOMETRY                                                    ║\n');
+fprintf('║  %-40s : %8.4f m/s  (%.0f fpm)     ║\n', 'Rate of descent', ROD_ms, ROD_fpm);
+fprintf('║  %-40s : %8.4f m/s              ║\n', 'Required horizontal speed', V_horiz_req);
+fprintf('║  %-40s : %8.4f m/s              ║\n', 'Computed glide speed TAS', V_descent);
+fprintf('║  %-40s : %8.4f deg              ║\n', 'Descent angle', rad2deg(gamma_desc));
+fprintf('║  %-40s : %8.2f s  (%.2f min)    ║\n', 'Time to descend', t_desc_s, t_desc_min);
+fprintf('║  %-40s : %8.2f km  (%.2f nmi)   ║\n', 'Horiz distance, descent', d_desc_m/1e3, d_desc_m/1852);
+fprintf('╠══════════════════════════════════════════════════════════════════════╣\n');
+fprintf('║  LOITER RESERVE PARAMETERS                                           ║\n');
+fprintf('║  %-40s : %8.4f               ║\n', 'CL_BE (best-endurance)', CL_BE);
+fprintf('║  %-40s : %8.4f               ║\n', 'CD_BE', CD_BE);
+fprintf('║  %-40s : %8.4f               ║\n', 'L/D at best endurance', LD_BE);
+fprintf('║  %-40s : %8.4e  [N^0.5]     ║\n', 'K_loiter', K_loiter);
+fprintf('║  %-40s : %8.2f kg            ║\n', 'Dry weight W_dry (OEW+payload)', W_dry_kg);
+fprintf('║  %-40s : %8.2f kg            ║\n', 'Required landing weight W6', W6_target_kg);
+fprintf('║  %-40s : %8.2f kg            ║\n', 'Loiter fuel reserve', W_loiter_fuel_kg);
+fprintf('║  %-40s : %8.6f               ║\n', 'Loiter ff = W_dry/W6', ff_loiter);
+fprintf('╠══════════════════════════════════════════════════════════════════════╣\n');
+fprintf('║  FUEL ITERATION  (tol = %.3f kg,  init guess = %.2f kg)          ║\n', ...
+    tol_kg, W_fuel_kg);
+fprintf('║  %4s | %9s | %9s | %9s | %9s | %9s  ║\n', ...
+    'Iter','W_fuel','W0','W6_comp','W6_tgt','Resid');
+fprintf('║  %s  ║\n', repmat('-', 1, 64));
+
+converged   = false;
+residual_kg = NaN;
+
+for iter = 1:max_iter
+
+    % (a) Takeoff weight
+    W0_kg = W_dry_kg + W_fuel_kg;   % [kg]
+    W0_N  = W0_kg * g;              % [N]
+
+    % (b) Weights through ground segments (Raymer fractions)
+    W1_kg = W0_kg * ff_warmup;      % after warm-up and taxi
+    W2_kg = W1_kg * ff_takeoff;     % after takeoff = weight at base of climb
+    W2_N  = W2_kg * g;              % [N] — held constant in climb sim
+
+    % (c) ── Kinematic climb simulation (SCALARS ONLY — no vector storage) ──
+    %   Purpose: find horizontal distance and time to climb 0 → h_cruise.
+    %   Weight is fixed at W2_N (no per-dt update; team decision).
+    %   Full throttle throughout (sigma × P_A_SL).
+    %   Equations at each dt:
+    %     T     = P_A(h) / V_climb       (thrust from propulsive power)
+    %     q     = 0.5 × rho × V²
+    %     CL    = W / (q × S)            (small-angle: L ≈ W)
+    %     CD    = CD0 + k × CL²
+    %     D     = q × S × CD
+    %     ROC   = V × (T − D) / W        (specific excess power → climb rate)
+    %     gamma = asin(ROC / V)          (climb angle)
+    %     V_h   = V × cos(gamma)         (horizontal speed — constraint check)
+
+    h_c       = 0.0;   % current altitude            [m]
+    d_climb_m = 0.0;   % cumulative horiz distance   [m]
+    t_climb_s = 0.0;   % cumulative time             [s]
+    ROC_sum   = 0.0;   % for average ROC
+    n_steps   = 0;
+    Vh_min    = inf;   % track minimum V_horiz (constraint check)
+
+    while h_c < h_cruise
+        % Atmosphere at current altitude
+        [~, rho_c, ~, ~] = StdAtmos(h_c);
+        sigma_c = rho_c / rho_SL;
+
+        % Propulsive power and thrust (full throttle)
+        P_A_c = sigma_c * P_A_SL;          % [W]
+        T_c   = P_A_c / V_climb;           % [N]
+
+        % Aerodynamic forces
+        q_c   = 0.5 * rho_c * V_climb^2;  % [N/m²]
+        CL_c  = W2_N / (q_c * S);         % small-angle approx: L ≈ W
+        CD_c  = CD0 + k * CL_c^2;
+        D_c   = q_c * S * CD_c;           % [N]
+
+        % Rate of climb (specific excess power equation)
+        %   If ROC ≤ 0 the aircraft is at or above its service ceiling.
+        ROC_c = V_climb * (T_c - D_c) / W2_N;  % [m/s]
+        if ROC_c <= 0
+            warning('PUDO670:Ceiling', ...
+                'ROC ≤ 0 at h = %.1f m. Aircraft at service ceiling.', h_c);
+            break;
+        end
+
+        % Climb angle and horizontal speed
+        gamma_c   = asin(min(ROC_c / V_climb, 1.0));  % [rad]
+        V_horiz_c = V_climb * cos(gamma_c);             % [m/s]
+        Vh_min    = min(Vh_min, V_horiz_c);
+
+        % Clip last time step so altitude lands exactly at h_cruise
+        dt_eff    = min(dt_climb, (h_cruise - h_c) / ROC_c);
+
+        % Accumulate
+        d_climb_m = d_climb_m + V_horiz_c * dt_eff;
+        t_climb_s = t_climb_s + dt_eff;
+        h_c       = h_c + ROC_c * dt_eff;
+        ROC_sum   = ROC_sum + ROC_c;
+        n_steps   = n_steps + 1;
+    end
+
+    ROC_avg_ms  = ROC_sum / max(n_steps, 1);  % average ROC over climb [m/s]
+    ROC_avg_fpm = ROC_avg_ms * 196.85;         % [ft/min]
+    t_climb_min = t_climb_s / 60;
+
+    % (d) Required cruise range after subtracting climb and descent distances
+    d_cruise_m   = R_total_m - d_climb_m - d_desc_m;  % [m]
+    d_cruise_km  = d_cruise_m / 1e3;
+    d_cruise_nmi = d_cruise_m / 1852;
+
+    if d_cruise_m <= 0
+        error('PUDO670:RangeError', ...
+            ['Cruise range is %.1f m (negative).\n' ...
+             'Climb + descent exceeds 450 nmi total range.'], d_cruise_m);
+    end
+
+    % (e) Cruise fuel fraction via Breguet range equation (propeller, SI):
+    %   R = (eta_p / (g × SFCp_SI)) × L/D × ln(W_start / W_end)
+    %   → ff = exp(−R × g × SFCp_SI / (eta_p × L/D))
+    ff_cruise = exp(-d_cruise_m * g * SFCp_SI / (eta_p * LD_cruise));
+
+    % (f) Weight chain through all remaining segments
+    %   Each segment starts at the END weight of the previous segment.
+    W3_kg = W2_kg * ff_climb;    % after climb   (Raymer ff)
+    W4_kg = W3_kg * ff_cruise;   % after cruise  (Breguet ff)
+    W5_kg = W4_kg * ff_descent;  % after descent (Raymer ff)
+    W6_kg = W5_kg * ff_landing;  % after landing rollout
+
+    % (g) Convergence check
+    residual_kg = W6_kg - W6_target_kg;
+
+    fprintf('║  %4d | %9.3f | %9.3f | %9.3f | %9.3f | %9.4f  ║\n', ...
+        iter, W_fuel_kg, W0_kg, W6_kg, W6_target_kg, residual_kg);
+
+    if abs(residual_kg) < tol_kg
+        converged = true;
+        break;
+    end
+
+    % (h) Newton update for W_fuel
+    %   W6 ≈ (W_dry + W_fuel) × ff_product
+    %   dW6 / dW_fuel ≈ ff_product  (treating ff_cruise as locally constant)
+    %   → W_fuel_new = W_fuel − residual / ff_product
+    %   If residual > 0: aircraft is too heavy at landing (overfuel) → reduce fuel.
+    %   If residual < 0: aircraft is too light at landing (underfuel) → add fuel.
+    ff_product = ff_warmup * ff_takeoff * ff_climb * ff_cruise * ff_descent * ff_landing;
+    W_fuel_kg  = W_fuel_kg - residual_kg / ff_product;
+
+end  % end iteration loop
+
+if ~converged
+    warning('PUDO670:NoConverge', ...
+        'Fuel iteration did not converge in %d iterations. Final residual: %.4f kg', ...
+        max_iter, residual_kg);
+end
+
+% Store final converged values
+W0_ref_kg    = W0_kg;
+t_cruise_s   = d_cruise_m / V_cruise;
+t_cruise_min = t_cruise_s / 60;
+t_total_min  = t_climb_min + t_cruise_min + t_desc_min;
+
+
+%% =========================================================================
+%  SECTION 6 — COMMAND WINDOW WEIGHT AND MISSION SUMMARY
+% =========================================================================
+
+fprintf('╠══════════════════════════════════════════════════════════════════════╣\n');
+fprintf('║  CONVERGED MISSION SUMMARY                                           ║\n');
+fprintf('╠══════════════════════════════════════════════════════════════════════╣\n');
+fprintf('║  ── WEIGHT BREAKDOWN AT TAKEOFF ──────────────────────────────────  ║\n');
+fprintf('║  %-40s : %8.2f kg            ║\n', 'OEW (structural + crew)', W_OEW_kg);
+fprintf('║  %-40s : %8.2f kg            ║\n', '  of which: crew (2 pilots)', W_crew_kg);
+fprintf('║  %-40s : %8.2f kg            ║\n', 'Config 1 full payload', W_pld_C1_full);
+fprintf('║  %-40s : %8.2f kg  (90%%)     ║\n', 'Reference mission payload', W_payload_ref);
+fprintf('║  %-40s : %8.2f kg            ║\n', 'Mission fuel (total incl. reserve)', W_fuel_kg);
+fprintf('║  %-40s : %8.2f kg            ║\n', '  of which: loiter reserve', W_loiter_fuel_kg);
+fprintf('║  %-40s : %8.2f kg  (%6.0f N) ║\n', 'REFERENCE MISSION MTOW', W0_ref_kg, W0_ref_kg*g);
+fprintf('║  %-40s : %8.2f kg  (%6.0f N) ║\n', 'Config 2 sizing MTOW (for reference)', 4077.0, 4077.0*g);
+fprintf('╠══════════════════════════════════════════════════════════════════════╣\n');
+fprintf('║  ── FUEL FRACTIONS ──────────────────────────────────────────────── ║\n');
+fprintf('║  %-40s : %9.6f  (Raymer)   ║\n', 'ff_warmup',  ff_warmup);
+fprintf('║  %-40s : %9.6f  (Raymer)   ║\n', 'ff_takeoff', ff_takeoff);
+fprintf('║  %-40s : %9.6f  (Raymer)   ║\n', 'ff_climb',   ff_climb);
+fprintf('║  %-40s : %9.6f  (Breguet)  ║\n', 'ff_cruise',  ff_cruise);
+fprintf('║  %-40s : %9.6f  (Raymer)   ║\n', 'ff_descent', ff_descent);
+fprintf('║  %-40s : %9.6f  (Raymer)   ║\n', 'ff_landing', ff_landing);
+fprintf('║  %-40s : %9.6f  (Breguet E)║\n', 'ff_loiter',  ff_loiter);
+fprintf('║  %-40s : %9.6f              ║\n', 'zeta = W_fuel / W0', W_fuel_kg/W0_ref_kg);
+fprintf('╠══════════════════════════════════════════════════════════════════════╣\n');
+fprintf('║  ── SEGMENT WEIGHTS ─────────────────────────────────────────────── ║\n');
+fprintf('║  %-40s : %8.2f kg            ║\n', 'W0  — Takeoff (MTOW)', W0_ref_kg);
+fprintf('║  %-40s : %8.2f kg            ║\n', 'W1  — After warm-up/taxi', W1_kg);
+fprintf('║  %-40s : %8.2f kg            ║\n', 'W2  — After takeoff (base of climb)', W2_kg);
+fprintf('║  %-40s : %8.2f kg            ║\n', 'W3  — After climb', W3_kg);
+fprintf('║  %-40s : %8.2f kg            ║\n', 'W4  — After cruise', W4_kg);
+fprintf('║  %-40s : %8.2f kg            ║\n', 'W5  — After descent', W5_kg);
+fprintf('║  %-40s : %8.2f kg  (= W6_target) ║\n', 'W6  — After landing rollout', W6_kg);
+fprintf('║  %-40s : %8.2f kg  (zero fuel)║\n', 'W7  — After 45-min loiter', W_dry_kg);
+fprintf('╠══════════════════════════════════════════════════════════════════════╣\n');
+fprintf('║  ── HORIZONTAL DISTANCES ────────────────────────────────────────── ║\n');
+fprintf('║  %-40s : %8.2f km  (%6.2f nmi) ║\n', 'Climb distance', d_climb_m/1e3, d_climb_m/1852);
+fprintf('║  %-40s : %8.2f km  (%6.2f nmi) ║\n', 'Cruise distance', d_cruise_km, d_cruise_nmi);
+fprintf('║  %-40s : %8.2f km  (%6.2f nmi) ║\n', 'Descent distance', d_desc_m/1e3, d_desc_m/1852);
+fprintf('║  %-40s : %8.2f km  (%6.2f nmi) ║\n', 'Total ground track', R_total_m/1e3, R_total_nmi);
+fprintf('╠══════════════════════════════════════════════════════════════════════╣\n');
+fprintf('║  ── MISSION TIMING (excl. ground ops) ───────────────────────────── ║\n');
+fprintf('║  %-40s : %8.2f min            ║\n', 'Climb time', t_climb_min);
+fprintf('║  %-40s : %8.2f min            ║\n', 'Cruise time', t_cruise_min);
+fprintf('║  %-40s : %8.2f min', 'Descent time', t_desc_min);
+fprintf('            ║\n');
+fprintf('║  %-40s : %8.2f min            ║\n', 'Total air time', t_total_min);
+fprintf('╠══════════════════════════════════════════════════════════════════════╣\n');
+fprintf('║  ── CLIMB PERFORMANCE ───────────────────────────────────────────── ║\n');
+fprintf('║  %-40s : %8.2f m/s  (%.0f fpm) ║\n', 'Average ROC (full throttle)', ROC_avg_ms, ROC_avg_fpm);
+fprintf('║  %-40s : %8.2f m/s              ║\n', 'Fixed climb TAS', V_climb);
+fprintf('║  %-40s : %8.2f m/s              ║\n', 'Min V_horiz = V·cos(gamma) in climb', Vh_min);
+if Vh_min >= V_horiz_req
+    fprintf('║  ✓ V_horiz >= 67 m/s throughout climb — constraint satisfied.     ║\n');
+else
+    fprintf('║  ⚠ WARNING: V_horiz < 67 m/s in climb. Increase V_climb.         ║\n');
+end
+fprintf('╠══════════════════════════════════════════════════════════════════════╣\n');
+fprintf('║  ── CRUISE PARAMETERS ───────────────────────────────────────────── ║\n');
+fprintf('║  %-40s : %8.2f m/s  (~130 KTAS) ║\n', 'Cruise TAS', V_cruise);
+fprintf('║  %-40s : %8.0f m   (%5.0f ft)  ║\n', 'Cruise altitude', h_cruise, h_cruise/0.3048);
+fprintf('║  %-40s : %8.2f                 ║\n', 'L/D at cruise', LD_cruise);
+fprintf('║  %-40s : %8.2f kg              ║\n', 'W3 — start of cruise', W3_kg);
+fprintf('║  %-40s : %8.2f kg              ║\n', 'W4 — end of cruise', W4_kg);
+fprintf('╚══════════════════════════════════════════════════════════════════════╝\n\n');
+
+
+%% =========================================================================
+%  SECTION 7 — FINAL CLIMB SIMULATION (vector storage for plotting)
+%
+%  Identical physics to the scalar climb in Section 5, but now every time
+%  step is stored for Figure 1. Uses the converged W2_kg.
+% =========================================================================
+
+W2_N_final = W2_kg * g;   % converged weight at base of climb [N]
+
+max_pts = 7000;  % preallocate conservatively (h_cruise/ROC_min ≈ 4572/5 ≈ 914 steps)
+t_clmb_vec  = zeros(1, max_pts);
+h_clmb_vec  = zeros(1, max_pts);
+dx_clmb_vec = zeros(1, max_pts);
+V_clmb_vec  = V_climb * ones(1, max_pts);  % TAS constant throughout climb
+
+h_c   = 0.0;
+d_c   = 0.0;
+t_c   = 0.0;
+step  = 1;
+t_clmb_vec(1)  = 0;
+h_clmb_vec(1)  = 0;
+dx_clmb_vec(1) = 0;
+
+while h_c < h_cruise
+    [~, rho_c, ~, ~] = StdAtmos(h_c);
+    sigma_c = rho_c / rho_SL;
+    P_A_c   = sigma_c * P_A_SL;
+    T_c     = P_A_c / V_climb;
+    q_c     = 0.5 * rho_c * V_climb^2;
+    CL_c    = W2_N_final / (q_c * S);
+    CD_c    = CD0 + k * CL_c^2;
+    D_c     = q_c * S * CD_c;
+    ROC_c   = V_climb * (T_c - D_c) / W2_N_final;
+
+    if ROC_c <= 0, break; end
+
+    gamma_c   = asin(min(ROC_c / V_climb, 1.0));
+    V_horiz_c = V_climb * cos(gamma_c);
+    dt_eff    = min(dt_climb, (h_cruise - h_c) / ROC_c);
+
+    d_c   = d_c + V_horiz_c * dt_eff;
+    t_c   = t_c + dt_eff;
+    h_c   = h_c + ROC_c * dt_eff;
+
+    step = step + 1;
+    if step > max_pts
+        warning('PUDO670:Preallocate', ...
+            'Preallocated climb array exceeded. Increase max_pts in Section 7.');
+        break;
+    end
+    t_clmb_vec(step)  = t_c;
+    h_clmb_vec(step)  = h_c;
+    dx_clmb_vec(step) = d_c;
+end
+
+n_clmb      = step;
+t_clmb_min  = t_clmb_vec(1:n_clmb) / 60;   % [min]
+h_clmb      = h_clmb_vec(1:n_clmb);         % [m]
+dx_clmb     = dx_clmb_vec(1:n_clmb);        % [m] cumulative horiz distance
+V_clmb      = V_clmb_vec(1:n_clmb);         % [m/s]
+
+
+%% =========================================================================
+%  SECTION 8 — THROTTLE PROFILES
+%
+%  8a. CLIMB   : 100% full throttle throughout (team decision, fixed speed)
+%  8b. CRUISE  : T = D (level flight); throttle decreases as weight drops
+%  8c. DESCENT : Along-path balance T = D − W·sin(γ_desc)
+%                If T ≤ 0 → throttle = 0 (gravity exceeds drag requirement)
+%                If T > 0 → throttle = T·V / P_A(h)
+%
+%  All throttle values are % of maximum available power at that altitude.
+%  Fuel consumption uses Raymer/Breguet fractions — NOT these throttle values.
+%  Throttle charts are informational and for report illustration.
+% =========================================================================
+
+% --- 8a: Climb throttle (constant 100%) ----------------------------------
+thr_clmb_pct = 100 * ones(1, n_clmb);   % [%]
+
+% --- 8b: Cruise throttle (decreasing as weight falls) --------------------
+n_cr = 300;
+t_cr_rel = linspace(0, t_cruise_min, n_cr);           % time relative to cruise start [min]
+W_cr_N   = linspace(W3_kg, W4_kg, n_cr) * g;          % weight from W3 to W4 [N]
+
+[~, rho_cr, ~, ~] = StdAtmos(h_cruise);
+sigma_cr   = rho_cr / rho_SL;
+P_A_cr     = sigma_cr * P_A_SL;                        % [W] prop power at cruise alt
+q_cr       = 0.5 * rho_cr * V_cruise^2;               % [N/m²]
+CL_cr_vec  = W_cr_N / (q_cr * S);                     % [-]
+CD_cr_vec  = CD0 + k * CL_cr_vec.^2;                  % [-]
+T_cr_vec   = q_cr * S * CD_cr_vec;                    % T = D for level flight [N]
+%   Throttle = (T × V) / P_A   (required propulsive power / available power)
+thr_cr_pct = 100 * (T_cr_vec * V_cruise) / P_A_cr;   % [%]
+
+% --- 8c: Descent throttle ------------------------------------------------
+n_dc = 300;
+h_dc_vec  = linspace(h_cruise, 0, n_dc);              % altitude during descent [m]
+t_dc_rel  = linspace(0, t_desc_min, n_dc);             % time relative to descent start [min]
+W_dc_N    = linspace(W5_kg, W6_kg, n_dc) * g;         % weight W5→W6 [N]
+thr_dc_pct = zeros(1, n_dc);
+
+for i = 1:n_dc
+    [~, rho_d, ~, ~] = StdAtmos(h_dc_vec(i));
+    sigma_d = rho_d / rho_SL;
+    P_A_d   = sigma_d * P_A_SL;                        % [W]
+    q_d     = 0.5 * rho_d * V_descent^2;               % [N/m²]
+    CL_d    = W_dc_N(i) / (q_d * S);                  % [-]
+    CD_d    = CD0 + k * CL_d^2;                        % [-]
+    D_d     = q_d * S * CD_d;                          % [N]
+
+    %   Along-path force balance (constant speed, constant angle):
+    %     T + W·sin(γ) = D   →   T = D − W·sin(γ)
+    %   γ > 0 → gravity component assists forward motion.
+    %   T > 0: need thrust (drag exceeds gravity component → apply throttle)
+    %   T ≤ 0: pure glide (gravity exceeds drag → throttle = 0)
+    T_d = D_d - W_dc_N(i) * sin(gamma_desc);
+
+    if T_d > 0
+        thr_dc_pct(i) = 100 * (T_d * V_descent) / P_A_d;  % [%]
+    else
+        thr_dc_pct(i) = 0;
+    end
+end
+
+
+%% =========================================================================
+%  SECTION 9 — PLOTTING
+%
+%  Figure 1: Altitude and TAS vs mission time
+%            Two y-axes (altitude left, TAS right), x = time [min]
+%            Line color changes every 100 km of cumulative horizontal distance
+%            Color sequence: purple → blue → cyan → green → yellow → orange → red
+%
+%  Figure 2: Throttle vs mission time (3 stacked subplots)
+%            Each subplot shares the global mission time axis
+% =========================================================================
+
+% ── Colour scheme: 7 bands, one per 100 km ────────────────────────────────
+band_km    = 100;    % band width [km]
+colour_rgb = [       %  R     G     B
+    0.50, 0.00, 0.75;  % band 1: purple   0–100 km
+    0.00, 0.20, 0.90;  % band 2: blue   100–200 km
+    0.00, 0.80, 0.90;  % band 3: cyan   200–300 km
+    0.00, 0.65, 0.10;  % band 4: green  300–400 km
+    0.95, 0.85, 0.00;  % band 5: yellow 400–500 km
+    1.00, 0.50, 0.00;  % band 6: orange 500–600 km
+    0.90, 0.00, 0.00;  % band 7: red    600+   km
+];
+n_bands = size(colour_rgb, 1);
+
+% ── Build global mission vectors (all three phases concatenated) ──────────
+
+%  Climb: already computed in Section 7
+%  Global time starts at t = 0.
+t_plot_clmb  = t_clmb_min;                          % [min]  0 → t_climb_min
+h_plot_clmb  = h_clmb;                              % [m]
+V_plot_clmb  = V_clmb;                              % [m/s]
+d_plot_clmb  = dx_clmb / 1e3;                       % [km] cumulative
+
+%  Cruise: n_cr points from t_climb_min to t_climb_min + t_cruise_min
+t_plot_cr    = t_climb_min + t_cr_rel;              % [min]
+h_plot_cr    = h_cruise * ones(1, n_cr);             % [m]
+V_plot_cr    = V_cruise  * ones(1, n_cr);            % [m/s]
+%   Cumulative distance: add climb distance to cruise progress
+d_plot_cr    = (d_climb_m + linspace(0, d_cruise_m, n_cr)) / 1e3;  % [km]
+
+%  Descent: n_dc points from t_climb_min+t_cruise_min to t_total_min
+t_plot_dc    = t_climb_min + t_cruise_min + t_dc_rel;  % [min]
+h_plot_dc    = h_dc_vec;                               % [m]
+V_plot_dc    = V_descent * ones(1, n_dc);              % [m/s]
+d_plot_dc    = (d_climb_m + d_cruise_m + linspace(0, d_desc_m, n_dc)) / 1e3;  % [km]
+
+%  Global concatenation
+t_all  = [t_plot_clmb,  t_plot_cr,  t_plot_dc];   % [min]
+h_all  = [h_plot_clmb,  h_plot_cr,  h_plot_dc];   % [m]
+V_all  = [V_plot_clmb,  V_plot_cr,  V_plot_dc];   % [m/s]
+d_all  = [d_plot_clmb,  d_plot_cr,  d_plot_dc];   % [km] cumulative
+
+%  Global throttle time vectors (for Figure 2 shared x-axis)
+t_cr_global = t_climb_min + t_cr_rel;              % [min]
+t_dc_global = t_climb_min + t_cruise_min + t_dc_rel;  % [min]
+
+
+%% ── FIGURE 1: Airspeed & Altitude vs Time ────────────────────────────────
+fig1 = figure('Name', 'PUDO 670 — Reference Mission: Airspeed & Altitude', ...
+    'Units', 'normalized', 'Position', [0.02, 0.10, 0.92, 0.68]);
+
+ax1 = gca;
+
+%  ── LEFT y-axis: Altitude [m] ──
+yyaxis left
+hold on; box on; grid on;
+
+%  Plot altitude in color-banded segments (one plot call per band)
+for b = 1:n_bands
+    d_lo = (b - 1) * band_km;
+    d_hi = b * band_km;
+    %  Find indices where cumulative distance falls in this band.
+    %  Include one neighbor index on each side for continuity at boundaries.
+    in_b = d_all >= d_lo & d_all <= d_hi;
+    idx  = find(in_b);
+    if isempty(idx), continue; end
+    idx_ext = unique([max(1, idx(1)-1), idx(:)', min(numel(d_all), idx(end)+1)]);
+    plot(t_all(idx_ext), h_all(idx_ext), '-', ...
+        'Color', colour_rgb(b,:), 'LineWidth', 2.8);
+end
+
+ylabel('Altitude  [m]', 'FontSize', 12, 'Color', 'k');
+ylim([0, h_cruise * 1.20]);
+set(gca, 'YColor', 'k');
+
+%  ── RIGHT y-axis: Airspeed [m/s] ──
+yyaxis right
+hold on;
+
+for b = 1:n_bands
+    d_lo = (b - 1) * band_km;
+    d_hi = b * band_km;
+    in_b = d_all >= d_lo & d_all <= d_hi;
+    idx  = find(in_b);
+    if isempty(idx), continue; end
+    idx_ext = unique([max(1, idx(1)-1), idx(:)', min(numel(d_all), idx(end)+1)]);
+    plot(t_all(idx_ext), V_all(idx_ext), '--', ...
+        'Color', colour_rgb(b,:), 'LineWidth', 1.8);
+end
+
+ylabel('True Airspeed  [m/s]', 'FontSize', 12, 'Color', 'k');
+ylim([0, V_climb * 1.90]);
+set(gca, 'YColor', 'k');
+
+%  ── Phase boundary lines and labels ──
+yyaxis left
+xline(t_climb_min,              'k:', 'LineWidth', 1.5, 'HandleVisibility', 'off');
+xline(t_climb_min+t_cruise_min, 'k:', 'LineWidth', 1.5, 'HandleVisibility', 'off');
+
+text(t_climb_min * 0.45, h_cruise * 0.40, 'CLIMB', ...
+    'FontSize', 10, 'FontWeight', 'bold', 'Color', [0.30 0.30 0.30], ...
+    'HorizontalAlignment', 'center');
+text(t_climb_min + t_cruise_min * 0.50, h_cruise * 1.10, 'CRUISE', ...
+    'FontSize', 10, 'FontWeight', 'bold', 'Color', [0.30 0.30 0.30], ...
+    'HorizontalAlignment', 'center');
+text(t_climb_min + t_cruise_min + t_desc_min*0.50, h_cruise * 0.40, 'DESCENT', ...
+    'FontSize', 10, 'FontWeight', 'bold', 'Color', [0.30 0.30 0.30], ...
+    'HorizontalAlignment', 'center');
+
+xlabel('Mission Time  [min]', 'FontSize', 12);
+title({['PUDO 670 — Reference Mission: True Airspeed & Altitude vs Time'], ...
+    sprintf('Config 1 | 90%% Payload | W_{0} = %.0f kg | 450 nmi | Solid = Altitude, Dashed = TAS', ...
+    W0_ref_kg)}, 'FontSize', 11, 'FontWeight', 'bold');
+
+%  ── Distance-band colour legend ──
+total_dist_km  = d_all(end);
+leg_h   = gobjects(n_bands, 1);
+leg_lbl = cell(n_bands, 1);
+for b = 1:n_bands
+    d_lo = (b-1) * band_km;
+    if d_lo >= total_dist_km, break; end
+    yyaxis left
+    leg_h(b)   = plot(nan, nan, '-', 'Color', colour_rgb(b,:), 'LineWidth', 3.5);
+    leg_lbl{b} = sprintf('%d – %d km', d_lo, b*band_km);
+end
+valid_idx = arrayfun(@(h) isvalid(h) && h ~= 0, leg_h);
+legend(leg_h(valid_idx), leg_lbl(valid_idx), ...
+    'Location', 'northeast', 'FontSize', 9, 'Title', 'Cumul. distance');
+
+
+%% ── FIGURE 2: Throttle vs Time (3 subplots) ─────────────────────────────
+fig2 = figure('Name', 'PUDO 670 — Reference Mission: Throttle Profile', ...
+    'Units', 'normalized', 'Position', [0.02, 0.05, 0.92, 0.85]);
+
+%  ── Subplot 1: Climb throttle ──
+ax_c = subplot(3, 1, 1);
+plot(t_plot_clmb, thr_clmb_pct, '-', 'Color', [0.10 0.30 0.85], 'LineWidth', 2.5);
+hold on;
+yline(100, 'k--', 'LineWidth', 1.0, 'HandleVisibility', 'off');
+ylabel('Throttle  [%]', 'FontSize', 11);
+title(sprintf('Climb  |  V_{TAS} = %.0f m/s  |  Full throttle  |  Avg ROC = %.1f m/s  (%.0f fpm)', ...
+    V_climb, ROC_avg_ms, ROC_avg_fpm), 'FontSize', 10);
+ylim([0, 125]);
+xlim([t_plot_clmb(1), t_plot_clmb(end)]);
+grid on; box on;
+text(mean(t_plot_clmb), 55, ...
+    sprintf('Climb time: %.1f min   |   d_{climb} = %.1f km  (%.1f nmi)', ...
+    t_climb_min, d_climb_m/1e3, d_climb_m/1852), ...
+    'FontSize', 9, 'HorizontalAlignment', 'center', ...
+    'BackgroundColor', [1 1 1 0.75], 'EdgeColor', [0.7 0.7 0.7]);
+
+%  ── Subplot 2: Cruise throttle ──
+ax_r = subplot(3, 1, 2);
+plot(t_cr_global, thr_cr_pct, '-', 'Color', [0.82 0.15 0.08], 'LineWidth', 2.5);
+ylabel('Throttle  [%]', 'FontSize', 11);
+title(sprintf('Cruise  |  V_{TAS} = %.0f m/s  |  h = %.0f m (15,000 ft)  |  L/D = %.2f', ...
+    V_cruise, h_cruise, LD_cruise), 'FontSize', 10);
+y_max_cr = max(thr_cr_pct) * 1.35;
+ylim([0, y_max_cr]);
+xlim([t_cr_global(1), t_cr_global(end)]);
+grid on; box on;
+text(mean(t_cr_global), max(thr_cr_pct) * 0.45, ...
+    sprintf('W_{start} = %.0f kg → W_{end} = %.0f kg   |   d_{cruise} = %.0f km  (%.0f nmi)', ...
+    W3_kg, W4_kg, d_cruise_km, d_cruise_nmi), ...
+    'FontSize', 9, 'HorizontalAlignment', 'center', ...
+    'BackgroundColor', [1 1 1 0.75], 'EdgeColor', [0.7 0.7 0.7]);
+
+%  ── Subplot 3: Descent throttle ──
+ax_d = subplot(3, 1, 3);
+plot(t_dc_global, thr_dc_pct, '-', 'Color', [0.05 0.60 0.10], 'LineWidth', 2.5);
+xlabel('Mission Time  [min]', 'FontSize', 11);
+ylabel('Throttle  [%]', 'FontSize', 11);
+title(sprintf('Descent  |  V_{TAS} = %.4f m/s  |  V_{horiz} = %.0f m/s  |  ROD = %.0f fpm', ...
+    V_descent, V_horiz_req, ROD_fpm), 'FontSize', 10);
+y_max_dc = max(max(thr_dc_pct) * 1.35, 5.0);
+ylim([0, y_max_dc]);
+xlim([t_dc_global(1), t_dc_global(end)]);
+grid on; box on;
+
+if max(thr_dc_pct) < 0.10
+    text(mean(t_dc_global), y_max_dc * 0.5, ...
+        'Power-off glide — gravity alone sustains the required descent profile', ...
+        'FontSize', 9, 'HorizontalAlignment', 'center', ...
+        'BackgroundColor', [1 1 1 0.75], 'EdgeColor', [0.7 0.7 0.7]);
+else
