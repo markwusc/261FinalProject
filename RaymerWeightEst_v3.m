@@ -62,18 +62,18 @@ clear; clc; close all;
 %  (payload, crew, mission, Raymer coefficients) are in Section 2 below.
 
 % --- Wing geometry ---
-S   = 44.9;     % Wing reference area          [m²]   ESTIMATE
+S   = 37.1;     % Wing reference area          [m²]   ESTIMATE
                 % Caravan: 26 m², Kodiak: 23 m², Twin Otter: 39 m²
                 % Use ~30-40 m² for initial sizing of a 9-pax STOL turboprop
 
-AR  = 7.2;     % Aspect ratio                  [-]    ESTIMATE
+AR  = 6.76;     % Aspect ratio                  [-]    ESTIMATE
                 % STOL aircraft typically AR = 8-12.
                 % Higher AR: better L/D, worse STOL (larger span → more
                 % induced drag penalty near ground, heavier wing structure).
                 % Start at 10 — in the middle of the STOL-compatible range.
 
 % --- Aerodynamics ---
-CD0 = 0.030;    % Parasite drag coefficient, clean config  [-]  ESTIMATE
+CD0 = 0.0288;    % Parasite drag coefficient, clean config  [-]  ESTIMATE
                 % Typical range for clean turboprop: 0.025–0.035.
                 % Will be refined with full drag buildup (fuselage + wetted
                 % area calculation, April 21 deliverable).

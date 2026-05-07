@@ -69,7 +69,7 @@ eta_prop = 0.80;   % propeller efficiency during ground phase   [-]
 
 % ── Drag buildup (new methodology — component-based) ──────────────────────
 % All CD0 values built from first principles rather than scaling factors.
-CD0_clean = 0.027;   % parasite drag, clean cruise config [-]
+CD0_clean = 0.0288;   % parasite drag, clean cruise config [-]
 
 % Takeoff flap drag increment (partial flap, 30 deg)
 flapSpan_frac    = 0.80;   % fraction of semi-span covered by flaps
@@ -109,8 +109,8 @@ eta_rev        = 0.60;   % reverse-pitch propeller effectiveness (Raymer Ch.13) 
 liftKillFactor = 0.20;   % fraction of CL_max retained with spoilers deployed [-]
 
 % ── Fuel accounting (v2 method — consistent with W_To inputs) ──────────────
-zeta        = 0.139;   % fuel fraction  W_fuel / W_To [-]
-fuel_margin = 0.06;    % IFR reserve as fraction of total fuel [-]
+zeta        = 0.1295;   % fuel fraction  W_fuel / W_To [-]
+fuel_margin = 0.03;    % IFR reserve as fraction of total fuel [-]
 % W_fuel_burned = zeta × W_To × (1 - fuel_margin)
 % W_land = W_To - W_fuel_burned
 
@@ -124,7 +124,7 @@ AR_vec = linspace( 5, 14, nAR);   % aspect ratio        [-]
 %  SECTION 2 — AIRCRAFT CONFIGURATIONS  (W_To and SHP retained from v2)
 % =========================================================================
 
-W_To_arr  = [42572, 64253];                          % MTOW per config    [N]
+W_To_arr  = [40000, 60441];                          % MTOW per config    [N]
 n_eng_arr = [1, 2];                                  % engine count
 P_A_arr   = eta_prop * P_shp * shp2W * n_eng_arr;   % propulsive power   [W]
 
