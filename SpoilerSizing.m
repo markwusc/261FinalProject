@@ -47,7 +47,7 @@ clear; clc; close all;
 % =========================================================================
 %  SECTION 1 — INPUTS
 % =========================================================================
-
+  
 % Landing drag target and baseline (without spoilers).
 % Set these to match your airplane's landing configuration.
 CD0_landing_target   = 0.060;   % desired total landing CD0            [-]
