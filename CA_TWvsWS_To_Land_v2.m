@@ -57,38 +57,38 @@ W_To  = 42000;   % max takeoff weight, single engine             [N]
                   % (~4281 kg). Update every weight-loop iteration.
 
 % ── Fuel fraction ─────────────────────────────────────────────────────────
-zeta  = 0.139;   % W_fuel / W_To (both climb + cruise + reserve) [-]
+zeta  = 0.131;   % W_fuel / W_To (both climb + cruise + reserve) [-]
                   % Derived from Breguet mission analysis. Revisit when
                   % engine SFC and mission profile are finalised.
 
 % ── Wing geometry ─────────────────────────────────────────────────────────
-AR    = 7;       % aspect ratio — fixed for this analysis         [-]
+AR    = 6.76;       % aspect ratio — fixed for this analysis         [-]
                   % AR = 7 chosen for STOL structural robustness.
                   % Lower AR → shorter span → lighter wing box.
                   % Revisit if aeroelastic or range constraints tighten.
 
-S_ref = 45.4;    % reference wing area — current design point    [m^2]
+S_ref = 37.3;    % reference wing area — current design point    [m^2]
                   % Sets W/S_design = W_To / S_ref.
                   % Derived from v2 constraint analysis intersection.
                   % Update when wing sizing is revised.
 
 % ── Aerodynamics ──────────────────────────────────────────────────────────
-CD_0_clean = 0.030;   % zero-lift parasite drag, clean config     [-]
+CD_0_clean = 0.029;   % zero-lift parasite drag, clean config     [-]
                        % Preliminary estimate. Refine with full drag buildup
                        % (fuselage wetted area, empennage, interference).
 
-CL_max_TO   = 2.4;   % max lift coefficient — takeoff flap        [-]
+CL_max_TO   = 2.54;   % max lift coefficient — takeoff flap        [-]
                        % = 0.8 * airfoil CL_max per RFP §4.3.
                        % Update after airfoil selection and flap sizing.
 
-CL_max_land = 2.6;   % max lift coefficient — landing flap        [-]
+CL_max_land = 2.72;   % max lift coefficient — landing flap        [-]
                        % Full flap setting; typically 10-15% above TO value.
                        % Update after airfoil + flap geometry finalised.
 
 e = 0.9;             % Oswald efficiency factor (clean, RFP §4.3) [-]
                        % Assumed constant; decreases with wing stores (→0.8).
 
-liftKillFactor = 0.30; % fraction of CL_max retained with spoilers [-]
+liftKillFactor = 0.20; % fraction of CL_max retained with spoilers [-]
                         % Spoilers destroy lift → more weight on gear →
                         % more braking friction. Revisit after spoiler design.
 
@@ -97,12 +97,12 @@ eta     = 0.80;  % propeller efficiency                           [-]
                   % Typical for a variable-pitch constant-speed prop.
                   % Stable once prop is sized; rarely changes after selection.
 
-eta_rev = 0.45;  % thrust reversal effectiveness (PT6A beta-pitch)[-]
+eta_rev = 0.60;  % thrust reversal effectiveness (PT6A beta-pitch)[-]
                   % Range 0.40–0.55 per manufacturer data.
                   % Conservative mid-range; stable after engine finalised.
 
 % ── Ground friction ───────────────────────────────────────────────────────
-mu_r     = 0.40; % rolling friction — gravel runway (RFP constant)[-]
+mu_r     = 0.10; % rolling friction — gravel runway (RFP constant)[-]
                   % Do not change between missions; fixed by RFP.
 
 mu_brake = 0.50; % braking friction — landing ground roll         [-]
@@ -129,14 +129,14 @@ d_marg = d_req * 0.95;   % 5% design margin (≈ 144.78 m)          [m]
 P_A = eta * P_shp * shp2W;   % thrust power available             [W]
 
 % ── Fuel / landing weight ─────────────────────────────────────────────────
-fuel_margin   = 0.06;                              % 6% IFR reserve [-]
+fuel_margin   = 0.03;                              % 6% IFR reserve [-]
 W_fuel_burned = zeta * W_To * (1 - fuel_margin);  % fuel consumed  [N]
 W_land        = W_To - W_fuel_burned;              % landing weight [N]
 
 % ── Drag scaling ──────────────────────────────────────────────────────────
-CD_0_TO   = 2.5 * CD_0_clean;   % takeoff partial flap  → 0.075   [-]
+CD_0_TO   = 0.084;   % takeoff partial flap  → 0.075   [-]
 %CD_0_land = 5.0 * CD_0_clean;   % full flap + spoiler   → 0.150   [-]
-CD_0_land = 0.3;
+CD_0_land = 0.2;
 % NOTE: CD_0_land = 0.150 is on the high end for this class
 % (typical STOL range 0.060–0.100). Revisit after flap drag buildup.
 
