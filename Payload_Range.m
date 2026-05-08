@@ -96,8 +96,8 @@ yline(W_payload_max, '--', 'Max Payload', ...
       'LineWidth', 1.2, ...
       'LabelHorizontalAlignment','left');
 
-xlabel('Range [nmi]')
-ylabel('Payload [kg]')
+xlabel('Range, $R$ [nmi]','Interpreter','latex')
+ylabel('Payload, $W_{payload}$ [kg]','Interpreter','latex')
 title('Payload-Range Diagram')
 
 xlim([0, 1.10*R_D])

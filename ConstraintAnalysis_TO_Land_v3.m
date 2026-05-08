@@ -451,15 +451,9 @@ legend([h_g, h_y, h_lr, h_dr, h_TO_s, h_TO_m, h_ld_s, h_ld_m, h_pink, h_pt], ...
        'Location', 'northeast', 'FontSize', 7.5, ...
        'Color', [0.95 0.95 0.95], 'EdgeColor', [0.4 0.4 0.4]);
 
-xlabel('Wing Area  S  [m^2]',   'FontSize', 12);
-ylabel('Aspect Ratio  AR  [-]', 'FontSize', 12);
-title({ ...
-    sprintf('Constraint Analysis v3  —  %s', strrep(cfg_names{c_primary},'\times','×')), ...
-    sprintf('CD0: TO=%.4f  |  appch=%.4f  |  gnd=%.4f  |  CL_{max}: TO=%.2f  land=%.2f', ...
-            CD0_takeoff, CD0_approach, CD0_groundroll, CL_max_TO, CL_max_land), ...
-    sprintf('\\mu_r=%.2f  \\mu_{brake}=%.2f  \\eta_{rev}=%.2f  liftKill=%.2f  e=%.2f  h_{wing}=%.1f m', ...
-            mu_r, mu_brake, eta_rev, liftKillFactor, e, h_wing)}, ...
-    'FontSize', 10);
+xlabel('Wing Area, $S$ [m$^{2}$]', 'FontSize', 12, 'Interpreter', 'latex');
+ylabel('Aspect Ratio, $AR$ [-]', 'FontSize', 12, 'Interpreter', 'latex');
+title('Constraint Analysis', 'FontSize', 10, 'Interpreter', 'none');
 
 ax1 = gca;
 ax1.FontSize  = 10;
@@ -547,8 +541,8 @@ for p = 1:2
                'Color', [0.95 0.95 0.95], 'EdgeColor', [0.4 0.4 0.4]);
     end
 
-    xlabel('Wing Area  S  [m^2]',   'FontSize', 12);
-    ylabel('Aspect Ratio  AR  [-]', 'FontSize', 12);
+xlabel('Wing Area, $S$ [m$^{2}$]', 'FontSize', 12, 'Interpreter', 'latex');
+ylabel('Aspect Ratio, $AR$ [-]', 'FontSize', 12, 'Interpreter', 'latex');
     title(strrep(cfg_names{p}, '\times', '×'), 'FontSize', 11);
 
     ax = gca;
@@ -562,15 +556,12 @@ for p = 1:2
 
 end
 
-sgtitle({ ...
-    'Constraint Analysis v3  —  Takeoff & Landing Field Length  |  AR vs S', ...
-    sprintf('CD0: TO=%.4f  appch=%.4f  gnd=%.4f  |  CL_{max}: TO=%.2f  land=%.2f', ...
-            CD0_takeoff, CD0_approach, CD0_groundroll, CL_max_TO, CL_max_land), ...
-    sprintf('\\mu_r=%.2f  \\mu_{brake}=%.2f  \\eta_{rev}=%.2f  liftKill=%.2f  e=%.2f  h_{wing}=%.1f m  \\zeta=%.3f', ...
-            mu_r, mu_brake, eta_rev, liftKillFactor, e, h_wing, zeta)}, ...
-    'FontSize', 10.5);
+sgtitle('Constraint Analysis —  Takeoff & Landing Field Length')
 
 linkaxes(ax_f2);
+
+print(1, 'ConstrainAnalysis1.png', '-dpng', '-r1200')
+print(2, 'ConstrainAnalysis2.png', '-dpng', '-r1200')
 
 % =========================================================================
 %  LOCAL FUNCTION — buildRGB
