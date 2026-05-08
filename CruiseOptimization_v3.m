@@ -38,13 +38,13 @@ clear; clc; close all;
 %  SECTION 1 — DESIGN PARAMETERS
 % =========================================================================
 
-W_To   = 39867;       % Max takeoff weight                     [N]
-S      = 39.8;        % Wing reference area                    [m^2]
-AR     = 6.85;        % Aspect ratio                           [-]
+W_To   = 40000;       % Max takeoff weight                     [N]
+S      = 37.3;        % Wing reference area                    [m^2]
+AR     = 6.76;        % Aspect ratio                           [-]
 b      = sqrt(S*AR);       % Wing span                              [m]
-CD0    = 0.03;        % Parasite drag, clean cruise            [-]
+CD0    = 0.029;        % Parasite drag, clean cruise            [-]
 e      = 0.9;         % Oswald efficiency factor               [-]
-zeta   = 0.130;       % Mission fuel fraction Wf/W_To          [-]
+zeta   = 0.131;       % Mission fuel fraction Wf/W_To          [-]
 W_mid  = W_To * (1 - zeta / 2);   % Mid-cruise weight         [N]
 
 P_shp  = 1050;        % Rated shaft horsepower, PT6A-60A      [shp]

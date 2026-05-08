@@ -36,8 +36,8 @@ clc; clear; close all
 
 %% Given Wing Geometry
 
-S_wing = 36.8;      % Wing reference area, m^2
-b_wing = 15.2;      % Wing span, m
+S_wing = 37.3;      % Wing reference area, m^2
+b_wing = 15.9;      % Wing span, m
 
 AR_wing = b_wing^2 / S_wing;     % Wing aspect ratio
 c_bar = S_wing / b_wing;         % Approximate mean aerodynamic chord, m
