@@ -592,18 +592,25 @@ end
 %            All subplots use global mission time on the x-axis.
 % =========================================================================
 
-% Colour table: 7 bands, one per 100 km
-band_km    = 100;
-colour_rgb = [
-    0.50, 0.00, 0.75;   % band 1: purple   0 - 100 km
-    0.00, 0.20, 0.90;   % band 2: blue   100 - 200 km
-    0.00, 0.80, 0.90;   % band 3: cyan   200 - 300 km
-    0.00, 0.65, 0.10;   % band 4: green  300 - 400 km
-    0.95, 0.85, 0.00;   % band 5: yellow 400 - 500 km
-    1.00, 0.50, 0.00;   % band 6: orange 500 - 600 km
-    0.90, 0.00, 0.00;   % band 7: red    600+    km
+% Colour table: dynamically sized to cover full mission distance
+band_km           = 100;
+total_dist_km_pre = (d_climb_m + d_cruise_m + d_desc_m) / 1e3;
+n_bands_needed    = ceil(total_dist_km_pre / band_km);
+colour_base = [
+    0.50, 0.00, 0.75;   % purple
+    0.00, 0.20, 0.90;   % blue
+    0.00, 0.80, 0.90;   % cyan
+    0.00, 0.65, 0.10;   % green
+    0.95, 0.85, 0.00;   % yellow
+    1.00, 0.50, 0.00;   % orange
+    0.90, 0.00, 0.00;   % red
 ];
-n_bands = size(colour_rgb, 1);
+if n_bands_needed <= size(colour_base,1)
+    colour_rgb = colour_base(1:n_bands_needed, :);
+else
+    colour_rgb = colour_base(mod((0:n_bands_needed-1), size(colour_base,1))+1, :);
+end
+n_bands = n_bands_needed;
 
 % Build global mission vectors (3 phases concatenated)
 t_plot_clmb = t_clmb_min;                                            % [min]
@@ -682,6 +689,7 @@ text(t_climb_min + t_cruise_min + t_desc_min*0.5, h_cruise * 0.40, 'DESCENT', ..
     'FontSize',10,'FontWeight','bold','Color',[0.3 0.3 0.3],'HorizontalAlignment','center');
 
 xlabel('Mission Time  [min]', 'FontSize', 12);
+xlim([0, t_all(end) * 1.02]);   % ensure full descent visible
 title({'PUDO 670 — Reference Mission: True Airspeed & Altitude vs Time', ...
     sprintf('Config 1 | 90%% Payload | W_0 = %.0f kg | 450 nmi | Solid = Altitude  Dashed = TAS', ...
     W0_ref_kg)}, 'FontSize', 11, 'FontWeight', 'bold');
@@ -698,8 +706,9 @@ for b = 1:n_bands
     leg_lbl{b} = sprintf('%d - %d km', d_lo, b*band_km);
 end
 valid_idx = arrayfun(@(x) isgraphics(x,'line'), leg_h);
-legend(leg_h(valid_idx), leg_lbl(valid_idx), ...
-    'Location','northeast','FontSize',9,'Title','Cumulative distance');
+lg = legend(leg_h(valid_idx), leg_lbl(valid_idx), ...
+    'Location','northeast','FontSize',9);
+lg.Title.String = 'Cumulative distance';
 
 
 % ── FIGURE 2: Throttle vs Time (3 subplots) ───────────────────────────────

@@ -1,0 +1,33 @@
+Configuration,Item,Mass_kg,Mass_lb,Notes
+Config 1 - Passenger Transport,9 passengers body weight,816.47,1800.00,RFP: 200 lb each
+Config 1 - Passenger Transport,9 passengers baggage,204.12,450.00,RFP: 50 lb each
+Config 1 - Passenger Transport,1 flight attendant body weight,90.72,200.00,Design addition - not in RFP
+Config 1 - Passenger Transport,1 FA baggage (pilot allowance),9.07,20.00,20 lb pilot allowance per design decision
+Config 1 - Passenger Transport,10 removable seats (10 kg each),100.00,220.46,9 pax + 1 FA seat
+Config 1 - Passenger Transport,TOTAL,1220.37,2690.46,
+
+Config 2 - Cargo Transport (SIZING CASE),9 pax body weight equivalent,816.47,1800.00,Mass equivalence per RFP
+Config 2 - Cargo Transport (SIZING CASE),9 pax baggage equivalent,204.12,450.00,Mass equivalence per RFP
+Config 2 - Cargo Transport (SIZING CASE),9 removable seats (10 kg each),90.00,198.42,9 pax seats only - no FA seat in Config 2
+Config 2 - Cargo Transport (SIZING CASE),55 gal diesel cargo fuel (rho=0.85 kg/L),176.97,390.15,Delivered to remote site
+Config 2 - Cargo Transport (SIZING CASE),55-gal plastic drum (Uline S-9945BLU),11.40,25.13,VERIFY with final drum selection
+Config 2 - Cargo Transport (SIZING CASE),8000 W diesel generator,99.30,218.92,FLAG: VERIFY mass - conflict with 250 kg in report draft
+Config 2 - Cargo Transport (SIZING CASE),TOTAL,1398.25,3082.61,SIZING CASE - drives MTOW
+
+Config 3 - Medevac Outbound,2 medical technicians (no baggage),181.44,400.00,Emergency ops - no personal baggage
+Config 3 - Medevac Outbound,NATO litter / stretcher,22.68,50.00,RFP: 50 lb
+Config 3 - Medevac Outbound,Medical supplies and equipment,136.08,300.00,RFP: 300 lb aggregate - itemize when equipment selected
+Config 3 - Medevac Outbound,TOTAL,340.19,750.00,No patient on outbound leg
+
+Config 3 - Medevac Inbound,2 medical technicians (no baggage),181.44,400.00,Emergency ops - no personal baggage
+Config 3 - Medevac Inbound,NATO litter / stretcher,22.68,50.00,RFP: 50 lb
+Config 3 - Medevac Inbound,Medical supplies and equipment,136.08,300.00,RFP: 300 lb aggregate
+Config 3 - Medevac Inbound,1 patient body weight (no baggage),90.72,200.00,Loaded at remote site
+Config 3 - Medevac Inbound,1 patient escort body weight (no baggage),90.72,200.00,Loaded at remote site
+Config 3 - Medevac Inbound,TOTAL,521.63,1150.00,Heaviest Config 3 condition
+
+SUMMARY,Config 1 - Pax Transport,1220.37,2690.46,
+SUMMARY,Config 2 - Cargo (SIZING CASE),1398.25,3082.61,
+SUMMARY,Config 3 - Medevac Outbound,340.19,750.00,
+SUMMARY,Config 3 - Medevac Inbound,521.63,1150.00,
+SUMMARY,MTOW anchor (Config 2 converged),4077.47,8989.29,40000 N / 4077.5 kg

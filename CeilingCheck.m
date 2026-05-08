@@ -1,4 +1,4 @@
-function [state] = CeilingCheck(P_A_sl, W, S, AR, CD0)
+    function [state] = CeilingCheck(P_A_sl, W, S, AR, CD0)
     % Does a check given plane geometry and engine selection to see if
     % altitude requirements are met.
     rho_sl = 1.225; % density of air at sea level
