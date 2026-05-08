@@ -656,7 +656,7 @@ for b = 1:n_bands
     plot(t_all(idx_ext), h_all(idx_ext), '-', ...
         'Color', colour_rgb(b,:), 'LineWidth', 2.8);
 end
-ylabel('Altitude, $h$ [m]', 'FontSize', 12, 'Color', 'k','Interpreter','latex');
+ylabel('Altitude, $h$ [m]', 'FontSize', 12, 'Color', 'k');
 ylim([0, h_cruise * 1.22]);
 set(gca, 'YColor', 'k');
 
@@ -773,5 +773,5 @@ end
 sgtitle('Reference Mission Throttle Profile', ...
     'FontSize', 13, 'FontWeight', 'bold');
 
-print(1, 'RefMission1.png', '-dpng', '-r1200')
-%print(2, 'RefMission2', '-dpng', '-r1200')
+% print(1, 'RefMission1.png', '-dpng', '-r1200')
+% print(2, 'RefMission2', '-dpng', '-r1200')

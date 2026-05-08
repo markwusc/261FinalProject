@@ -435,11 +435,9 @@ yline(CD0_clean, 'k--', 'LineWidth',1.5, ...
 
 xticks(1:length(comp_labels));
 xticklabels(comp_labels);
-ylabel('Parasite Drag Coefficient  CD_0  [-]', 'FontSize',12);
-title({ ...
-    'Drag Build-Up — Component Contributions to CD_{0,clean}', ...
-    sprintf('Raymer §12.5 | NASA GA(W)-1 | NACA 0012 tails | Fixed Tricycle Gear | S_{ref} = %.2f m^2', S_ref)}, ...
-    'FontSize',11);
+ylabel('Parasite Drag Coefficient,  $C_{D0}$  [-]', 'FontSize',12,'Interpreter','latex');
+title(...
+    'Drag Build-Up','FontSize',11);
 
 ax = gca;
 ax.FontSize  = 11;
@@ -448,3 +446,5 @@ grid on;
 ylim([0, max(CD0_parts)*1.40]);
 xlim([0.4, length(comp_labels)+0.6]);
 box on;
+
+print(1, 'Drag Build-Up.png', '-dpng', '-r1200')
